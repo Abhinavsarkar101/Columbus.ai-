@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #0B111E;
+    color: #F1F5F9;
+  }
+}
+
+.bg-grid-pattern {
+  background-size: 48px 48px;
+  background-image: 
+    linear-gradient(to right, rgba(20, 184, 166, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 184, 166, 0.05) 1px, transparent 1px);
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  nav, header, footer, .no-print {
+    display: none !important;
+  }
+  
+  #resume-sheet, #resume-print-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    color: black !important;
+    background: white !important;
+  }
+}

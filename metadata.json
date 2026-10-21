@@ -1,0 +1,8 @@
+{
+  "name": "Compass — MBA Career OS",
+  "description": "Comprehensive career operating system for MBA students: domain & role assessment, ATS resume studio, job description matcher, networking outreach mapper, and company interview prep.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
