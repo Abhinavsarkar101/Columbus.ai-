@@ -181,14 +181,7 @@ export const Navigation: React.FC<NavigationProps> = ({
               </button>
             </nav>
 
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                onClick={() => onSelectTab('landing')}
-                className="px-3.5 py-1.5 text-xs font-bold text-[#00DF89] hover:text-white border border-[#00DF89]/40 bg-[#00DF89]/10 rounded-lg hover:bg-[#00DF89]/20 transition-colors whitespace-nowrap"
-              >
-                ← Back to Landing
-              </button>
-            </div>
+            {/* In-app action buttons can go here, like 'Save' or 'Export' */}
           </>
         )}
       </div>
@@ -261,12 +254,6 @@ export const Navigation: React.FC<NavigationProps> = ({
       {/* In-app Mobile Tab Bar */}
       {!isLanding && (
         <div className="lg:hidden flex items-center gap-1 px-4 py-2 border-t border-slate-800/80 overflow-x-auto text-xs font-medium text-slate-400 scrollbar-none bg-[#070B14]">
-          <button
-            onClick={() => onSelectTab('landing')}
-            className="px-2.5 py-1 rounded whitespace-nowrap text-[#00DF89] hover:text-white"
-          >
-            ← Landing
-          </button>
           <button
             onClick={() => onSelectTab('home')}
             className={`px-2.5 py-1 rounded whitespace-nowrap ${
