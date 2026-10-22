@@ -2,7 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { ResumeUploadModal } from '../components/ResumeUploadModal';
 import { analyzeJobDescription } from '../lib/jd';
 import { SAMPLE_MBA_RESUME } from '../lib/resume';
-import { BulletRewrite, ResumeData } from '../types';
+import {
+  GapClassification,
+  RequirementGap,
+  ResumeData,
+} from '../types';
 
 interface MatchProps {
   resumeData: ResumeData;
@@ -172,6 +176,21 @@ const INITIAL_PRESET_JOBS: ViewedJob[] = MBA_ROLES_CATALOG.slice(0, 4).map((role
   importedAt: Date.now() - 3600000,
 }));
 
+function isHttpUrl(urlString: string): boolean {
+  if (!urlString || typeof urlString !== 'string') return false;
+  return urlString.startsWith('http://') || urlString.startsWith('https://');
+}
+
+function formatShortUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    const pathPart = parsed.pathname.length > 22 ? parsed.pathname.slice(0, 20) + '…' : parsed.pathname;
+    return `${parsed.hostname}${pathPart !== '/' ? pathPart : ''}`;
+  } catch {
+    return rawUrl.length > 35 ? rawUrl.slice(0, 32) + '…' : rawUrl;
+  }
+}
+
 export const Match: React.FC<MatchProps> = ({
   resumeData,
   onUpdateResume,
@@ -179,6 +198,7 @@ export const Match: React.FC<MatchProps> = ({
 }) => {
   const [jobUrl, setJobUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [fetchStatus, setFetchStatus] = useState<{
     type: 'idle' | 'loading' | 'success' | 'error';
     message: string;
@@ -213,7 +233,7 @@ export const Match: React.FC<MatchProps> = ({
     return {
       title: first ? first.jobTitle : MBA_ROLES_CATALOG[0].title,
       company: first ? first.companyName : MBA_ROLES_CATALOG[0].company,
-      source: first ? first.sourceUrl : 'Default MBA Role',
+      source: first ? first.sourceUrl : 'Curated MBA Role',
     };
   });
 
@@ -223,9 +243,12 @@ export const Match: React.FC<MatchProps> = ({
   });
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [appliedRewrites, setAppliedRewrites] = useState<Record<number, boolean>>({});
+  const [appliedGaps, setAppliedGaps] = useState<Record<string, boolean>>({});
+  const [editedSuggestions, setEditedSuggestions] = useState<Record<string, string>>({});
+  const [confirmedGaps, setConfirmedGaps] = useState<Record<string, boolean>>({});
+  const [categoryFilter, setCategoryFilter] = useState<'all' | GapClassification>('all');
 
-  // Analysis updates immediately whenever jdInputText or resumeData changes
+  // Real-time analysis reactive to jdInputText and resumeData
   const analysis = useMemo(() => {
     return analyzeJobDescription(jdInputText, resumeData);
   }, [jdInputText, resumeData]);
@@ -247,7 +270,6 @@ export const Match: React.FC<MatchProps> = ({
       company: job.companyName,
       source: job.sourceUrl,
     });
-    // Immediately populate textarea with saved description
     setJdInputText(job.jobDescription);
     setFetchStatus({
       type: 'success',
@@ -255,13 +277,60 @@ export const Match: React.FC<MatchProps> = ({
     });
   };
 
-  // Remove single job from history
-  const handleRemoveViewedJob = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const nextList = previouslyViewedJobs.filter((j) => j.id !== id);
-    saveViewedJobs(nextList);
-    if (activeJobId === id && nextList.length > 0) {
-      handleSelectViewedJob(nextList[0]);
+  // PART 2: Remove single job from history with complete state consistency
+  const handleRemoveViewedJob = (e: React.MouseEvent, idToRemove: string) => {
+    e.stopPropagation(); // Stop propagation to prevent selecting the job on delete
+
+    const updatedList = previouslyViewedJobs.filter((j) => j.id !== idToRemove);
+    saveViewedJobs(updatedList);
+
+    // If the deleted job was currently active:
+    if (activeJobId === idToRemove) {
+      if (updatedList.length > 0) {
+        // Select next remaining history item and sync title, company, URL, and description
+        const nextJob = updatedList[0];
+        setActiveJobId(nextJob.id);
+        setFetchedJobMeta({
+          title: nextJob.jobTitle,
+          company: nextJob.companyName,
+          source: nextJob.sourceUrl,
+        });
+        setJdInputText(nextJob.jobDescription);
+        setFetchStatus({
+          type: 'success',
+          message: `Active job switched to "${nextJob.jobTitle}" after deletion ✓`,
+        });
+      } else {
+        // No history items remain: clear active job reference gracefully, leave JD editable
+        setActiveJobId('');
+        setFetchedJobMeta({
+          title: 'Custom Job Description',
+          company: 'Manual Input',
+          source: 'User Draft',
+        });
+        setFetchStatus({
+          type: 'idle',
+          message: 'Job removed from history. The description text area remains open for manual editing.',
+        });
+      }
+    } else {
+      // Non-active job deleted: leave active job and its description unchanged!
+      setFetchStatus({
+        type: 'idle',
+        message: 'Removed job from history.',
+      });
+    }
+  };
+
+  // Copy active job URL action
+  const handleCopyActiveJobUrl = async () => {
+    if (!fetchedJobMeta.source || !isHttpUrl(fetchedJobMeta.source)) return;
+    try {
+      await navigator.clipboard.writeText(fetchedJobMeta.source);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      // fallback
     }
   };
 
@@ -277,7 +346,6 @@ export const Match: React.FC<MatchProps> = ({
       return;
     }
 
-    // Client-side URL validation
     try {
       const parsed = new URL(trimmed);
       if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -315,7 +383,7 @@ export const Match: React.FC<MatchProps> = ({
         // Non-JSON response
       }
 
-      // Check if server endpoint returned 404 (e.g. GitHub Pages static hosting fallback)
+      // Check if server endpoint returned 404 (static hosting fallback e.g. GitHub Pages)
       if (!res.ok || !data || !data.success) {
         if (res.status === 404) {
           try {
@@ -396,7 +464,7 @@ export const Match: React.FC<MatchProps> = ({
       const nextList = [newJob, ...filtered];
       saveViewedJobs(nextList);
 
-      // Set active job reference
+      // Set active job reference and update URL display
       setActiveJobId(newJob.id);
       setFetchedJobMeta({
         title: fetchedTitle,
@@ -412,7 +480,7 @@ export const Match: React.FC<MatchProps> = ({
         message: `Successfully imported "${fetchedTitle}" (${fetchedCompany}) ✓`,
       });
     } catch (err: any) {
-      // Preserve existing text in text area on error!
+      // Preserve existing text in text area on error
       setFetchStatus({
         type: 'error',
         message: err.message || 'Could not fetch job posting. You can paste the job description directly below.',
@@ -422,22 +490,26 @@ export const Match: React.FC<MatchProps> = ({
     }
   };
 
-  // Handle applying improved bullet to resume (Strict User Action Only)
-  const handleApplyRewrite = (originalText: string, improvedText: string, idx: number) => {
-    if (!onUpdateResume) return;
+  // PART 5: Apply to Resume handler — strictly evidence-based
+  const handleApplyGapImprovement = (gap: RequirementGap) => {
+    if (!onUpdateResume || !gap.supportingEvidence) return;
+
+    const originalText = gap.supportingEvidence.originalBullet;
+    const finalImprovedText = (editedSuggestions[gap.id] || gap.recommendedImprovement || '').trim();
+    if (!finalImprovedText) return;
 
     // Deep clone resume data
     const updated: ResumeData = JSON.parse(JSON.stringify(resumeData));
     let replaced = false;
 
-    // Search through experience items and bullets
+    // Search experience bullets
     for (const exp of updated.experience) {
       for (let b = 0; b < exp.bullets.length; b++) {
         if (
           exp.bullets[b].trim().toLowerCase() === originalText.trim().toLowerCase() ||
-          exp.bullets[b].includes(originalText.slice(0, 20))
+          exp.bullets[b].includes(originalText.slice(0, 25))
         ) {
-          exp.bullets[b] = improvedText;
+          exp.bullets[b] = finalImprovedText;
           replaced = true;
           break;
         }
@@ -445,15 +517,15 @@ export const Match: React.FC<MatchProps> = ({
       if (replaced) break;
     }
 
-    // If not found in experience, check projects
+    // Search projects if not found in experience
     if (!replaced) {
       for (const proj of updated.projects) {
         for (let b = 0; b < proj.bullets.length; b++) {
           if (
             proj.bullets[b].trim().toLowerCase() === originalText.trim().toLowerCase() ||
-            proj.bullets[b].includes(originalText.slice(0, 20))
+            proj.bullets[b].includes(originalText.slice(0, 25))
           ) {
-            proj.bullets[b] = improvedText;
+            proj.bullets[b] = finalImprovedText;
             replaced = true;
             break;
           }
@@ -462,24 +534,29 @@ export const Match: React.FC<MatchProps> = ({
       }
     }
 
-    // If still not matched, append to first experience
-    if (!replaced && updated.experience.length > 0 && updated.experience[0].bullets.length > 0) {
-      updated.experience[0].bullets[0] = improvedText;
-      replaced = true;
-    }
-
     if (replaced) {
       // Track newly optimized bullet for highlight in Resume Studio
       const currentOptimized = updated.optimizedBullets ? [...updated.optimizedBullets] : [];
-      if (!currentOptimized.includes(improvedText)) {
-        currentOptimized.push(improvedText);
+      if (!currentOptimized.includes(finalImprovedText)) {
+        currentOptimized.push(finalImprovedText);
       }
       updated.optimizedBullets = currentOptimized;
 
       onUpdateResume(updated);
-      setAppliedRewrites((prev) => ({ ...prev, [idx]: true }));
+      setAppliedGaps((prev) => ({ ...prev, [gap.id]: true }));
     }
   };
+
+  // Candidate confirmation for Category D (Uncertain)
+  const handleConfirmCandidateExperience = (gapId: string, confirmed: boolean) => {
+    setConfirmedGaps((prev) => ({ ...prev, [gapId]: confirmed }));
+  };
+
+  // Filtered requirement gaps
+  const displayedGaps = useMemo(() => {
+    if (categoryFilter === 'all') return analysis.requirementGaps;
+    return analysis.requirementGaps.filter((g) => g.classification === categoryFilter);
+  }, [analysis.requirementGaps, categoryFilter]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8 bg-[#070B14] text-slate-100">
@@ -562,7 +639,7 @@ export const Match: React.FC<MatchProps> = ({
 
       {/* Main Grid: Input Column vs Analysis Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Job URL & Previously Viewed Jobs & Text Input */}
+        {/* Left Column: Job URL & Active Job Reference & Previously Viewed Jobs & Text Input */}
         <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">Job Description Source</h3>
@@ -582,7 +659,7 @@ export const Match: React.FC<MatchProps> = ({
                 value={jobUrl}
                 onChange={(e) => setJobUrl(e.target.value)}
                 disabled={isLoading}
-                placeholder="https://www.linkedin.com/jobs/view/... or any job posting link"
+                placeholder="https://www.linkedin.com/jobs/view/... or any job link"
                 className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89] disabled:opacity-60 font-mono"
               />
               <button
@@ -618,25 +695,65 @@ export const Match: React.FC<MatchProps> = ({
             )}
           </div>
 
-          {/* Active Job Reference Section */}
-          <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-[#00DF89]/40 rounded-xl space-y-1.5 shadow-lg">
+          {/* PART 1: Improved Active Job Reference Section */}
+          <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-[#00DF89]/40 rounded-xl space-y-2 shadow-lg">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-widest">
+              <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse"></span>
                 Active Job Reference
               </span>
-              <span className="text-[10px] text-slate-400 font-mono truncate max-w-[180px]">
-                {fetchedJobMeta.source}
-              </span>
+              {isHttpUrl(fetchedJobMeta.source) && (
+                <button
+                  type="button"
+                  onClick={handleCopyActiveJobUrl}
+                  className="text-[11px] text-slate-400 hover:text-[#00DF89] flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 transition-colors"
+                  title="Copy original job posting link"
+                  aria-label="Copy job posting URL"
+                >
+                  <span>{copiedUrl ? 'Copied ✓' : 'Copy Link'}</span>
+                </button>
+              )}
             </div>
-            <div className="text-sm font-extrabold text-white flex items-center gap-2">
-              <span>🎯 {fetchedJobMeta.title}</span>
-            </div>
-            <div className="text-xs text-slate-300 font-medium">
-              🏢 <span className="text-white font-semibold">{fetchedJobMeta.company}</span>
+
+            {/* Display Order: Job Title prominent, followed by Company Name · Original Job Posting URL */}
+            <div className="space-y-1">
+              <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
+                <span className="text-emerald-400">🎯</span>
+                <span>{fetchedJobMeta.title || 'Target Job Role'}</span>
+              </h2>
+
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300">
+                <span className="font-semibold text-white flex items-center gap-1">
+                  <span>🏢</span>
+                  <span>{fetchedJobMeta.company || 'Target Employer'}</span>
+                </span>
+
+                <span className="text-slate-600 font-bold" aria-hidden="true">·</span>
+
+                {isHttpUrl(fetchedJobMeta.source) ? (
+                  <a
+                    href={fetchedJobMeta.source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[#00DF89] hover:underline hover:text-[#38ef9e] font-medium transition-colors break-all group max-w-full sm:max-w-md"
+                    title={`Open original job posting: ${fetchedJobMeta.source}`}
+                    aria-label={`Open job posting URL in new tab: ${fetchedJobMeta.source}`}
+                  >
+                    <span className="truncate max-w-[220px] sm:max-w-[320px]">
+                      {formatShortUrl(fetchedJobMeta.source)}
+                    </span>
+                    <span className="text-[10px] opacity-80 group-hover:opacity-100 shrink-0 font-bold">↗</span>
+                  </a>
+                ) : (
+                  <span className="text-slate-400 text-[11px] italic">
+                    {fetchedJobMeta.source || 'Curated Reference Role'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Previously Viewed Jobs Section */}
+          {/* PART 2: Previously Viewed Jobs Section with Clear Delete Control */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
               <div className="flex items-center gap-2">
@@ -655,50 +772,49 @@ export const Match: React.FC<MatchProps> = ({
                 No previously viewed jobs yet. Paste any public job posting URL above to import a role.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1">
                 {previouslyViewedJobs.map((job) => {
                   const isSelected = activeJobId === job.id;
                   return (
-                    <button
+                    <div
                       key={job.id}
                       onClick={() => handleSelectViewedJob(job)}
-                      className={`group relative text-left p-2.5 rounded-xl border text-xs transition-all flex flex-col justify-between ${
+                      className={`group relative text-left p-3 rounded-xl border text-xs transition-all flex items-start justify-between gap-3 cursor-pointer ${
                         isSelected
                           ? 'border-[#00DF89] bg-[#00DF89]/15 shadow-sm text-white ring-1 ring-[#00DF89]/40'
                           : 'border-slate-800 bg-slate-950/70 hover:bg-slate-900 text-slate-300 hover:border-slate-700'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-start justify-between gap-1">
-                          <span className="truncate font-semibold text-white leading-tight">
+                      <div className="flex-1 min-w-0 pr-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="truncate font-bold text-white text-xs leading-tight">
                             {job.jobTitle}
                           </span>
                           {isSelected && (
-                            <span className="shrink-0 text-[9px] bg-[#00DF89] text-slate-950 px-1.5 py-0.2 rounded font-black uppercase">
+                            <span className="shrink-0 text-[9px] bg-[#00DF89] text-slate-950 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">
                               Active
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                        <div className="text-[11px] text-slate-400 truncate mt-0.5 font-medium">
                           {job.companyName}
                         </div>
+                        <div className="text-[10px] text-slate-500 font-mono truncate mt-1">
+                          {isHttpUrl(job.sourceUrl) ? formatShortUrl(job.sourceUrl) : job.sourceUrl}
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60 text-[10px] text-slate-500">
-                        <span className="truncate max-w-[140px] font-mono">
-                          {job.sourceUrl.startsWith('http')
-                            ? new URL(job.sourceUrl).hostname.replace(/^www\./, '')
-                            : job.sourceUrl}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => handleRemoveViewedJob(e, job.id)}
-                          className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-0.5 rounded transition-opacity"
-                          title="Remove from history"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </button>
+
+                      {/* PART 2: Delete Control (Visible, adequate clickable area, accessible, stopPropagation) */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveViewedJob(e, job.id)}
+                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-slate-700/80 bg-slate-900/90 text-slate-300 hover:text-rose-400 hover:bg-rose-950/60 hover:border-rose-800 active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        title="Delete job from history"
+                        aria-label={`Delete ${job.jobTitle} from history`}
+                      >
+                        <span className="text-sm font-bold leading-none">✕</span>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -725,7 +841,7 @@ export const Match: React.FC<MatchProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Score Breakdown & Recommendations */}
+        {/* Right Column: Score Breakdown & Evidence-Based Gap Optimization */}
         <div className="lg:col-span-7 space-y-6">
           {/* Match Score Card */}
           <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-6">
@@ -781,47 +897,372 @@ export const Match: React.FC<MatchProps> = ({
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Keyword Analysis Chips */}
-            <div className="space-y-4 pt-2">
-              <div>
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                  Critical Missing Keywords (Add to Resume)
-                </h4>
-                {analysis.missingKeywords.length === 0 ? (
-                  <div className="text-xs text-[#00DF89] bg-[#00DF89]/10 p-2.5 rounded-lg border border-[#00DF89]/30">
-                    Zero critical keywords missing! Your resume reflects the core taxonomy terms in this posting.
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {analysis.missingKeywords.slice(0, 10).map((m, i) => (
-                      <span
-                        key={i}
-                        className={`px-2 py-1 text-xs rounded border font-medium ${
-                          m.importance === 'critical'
-                            ? 'bg-rose-950/80 text-rose-400 border-rose-800 font-bold'
-                            : 'bg-amber-950/80 text-amber-400 border-amber-800'
-                        }`}
-                      >
-                        + {m.term}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                  Matched JD Terms ({analysis.matchedKeywords.length})
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {analysis.matchedKeywords.map((m, i) => (
-                    <span key={i} className="px-2 py-0.5 bg-[#00DF89]/10 text-[#00DF89] text-xs rounded border border-[#00DF89]/30 font-medium">
-                      ✓ {m.term}
-                    </span>
-                  ))}
+          {/* PART 4 & 6: Evidence-Based Resume Optimization Engine */}
+          <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
+            <div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">
+                    Optimization Engine
+                  </span>
+                  <h3 className="text-base font-bold text-white mt-0.5">
+                    Evidence-Based Requirement & Gap Analysis
+                  </h3>
                 </div>
+                <span className="text-[11px] text-slate-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
+                  {analysis.requirementGaps.length} Total Requirements
+                </span>
               </div>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Differentiates between skills already supported by your experience versus genuine skill gaps. Apply to Resume is strictly restricted to evidence-backed rewrites.
+              </p>
+            </div>
+
+            {/* Overall 4-Category Summary Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('category_a_matched')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  categoryFilter === 'category_a_matched'
+                    ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300 ring-1 ring-emerald-500/50'
+                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
+                }`}
+              >
+                <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Matched</div>
+                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.matchedCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Fully Evidenced</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('category_b_improve')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  categoryFilter === 'category_b_improve'
+                    ? 'border-[#00DF89] bg-[#00DF89]/15 text-[#00DF89] ring-1 ring-[#00DF89]/50'
+                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
+                }`}
+              >
+                <div className="text-[10px] text-[#00DF89] font-bold uppercase tracking-wider">Can Improve</div>
+                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.improveCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Apply Eligible</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('category_c_missing')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  categoryFilter === 'category_c_missing'
+                    ? 'border-rose-500 bg-rose-950/40 text-rose-300 ring-1 ring-rose-500/50'
+                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
+                }`}
+              >
+                <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Missing Gaps</div>
+                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.missingCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">No Fake Bullets</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('category_d_uncertain')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  categoryFilter === 'category_d_uncertain'
+                    ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500/50'
+                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
+                }`}
+              >
+                <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Uncertain</div>
+                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.uncertainCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Confirm Details</div>
+              </button>
+            </div>
+
+            {/* Filter Tabs Bar */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-b border-slate-800">
+              <button
+                onClick={() => setCategoryFilter('all')}
+                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors ${
+                  categoryFilter === 'all'
+                    ? 'bg-[#00DF89] text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                All Requirements ({analysis.requirementGaps.length})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('category_b_improve')}
+                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  categoryFilter === 'category_b_improve'
+                    ? 'bg-[#00DF89] text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>⚡ Can Improve</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
+                  {analysis.summary.improveCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setCategoryFilter('category_c_missing')}
+                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  categoryFilter === 'category_c_missing'
+                    ? 'bg-rose-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>✕ Missing Skills</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
+                  {analysis.summary.missingCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setCategoryFilter('category_d_uncertain')}
+                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  categoryFilter === 'category_d_uncertain'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>❓ Needs Confirmation</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
+                  {analysis.summary.uncertainCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setCategoryFilter('category_a_matched')}
+                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  categoryFilter === 'category_a_matched'
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>✓ Matched</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
+                  {analysis.summary.matchedCount}
+                </span>
+              </button>
+            </div>
+
+            {/* List of Requirement Gaps */}
+            <div className="space-y-4">
+              {displayedGaps.length === 0 ? (
+                <div className="p-6 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
+                  No requirements found in this filter category.
+                </div>
+              ) : (
+                displayedGaps.map((gap) => {
+                  const isApplied = appliedGaps[gap.id];
+                  const isConfirmed = confirmedGaps[gap.id];
+
+                  return (
+                    <div
+                      key={gap.id}
+                      className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-3 text-xs"
+                    >
+                      {/* Header row with Requirement Name, Category, Priority, and Status */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-white text-sm tracking-tight capitalize">
+                            {gap.requirement}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase">
+                            {gap.category}
+                          </span>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                              gap.importance === 'critical'
+                                ? 'bg-rose-950/80 text-rose-300 border border-rose-800/80'
+                                : gap.importance === 'important'
+                                ? 'bg-amber-950/80 text-amber-300 border border-amber-800/80'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {gap.importance} Priority
+                          </span>
+                        </div>
+
+                        {/* Classification Badge */}
+                        <div>
+                          {gap.classification === 'category_a_matched' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-800/50">
+                              ✓ Verified in Resume
+                            </span>
+                          )}
+                          {gap.classification === 'category_b_improve' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00DF89] bg-[#00DF89]/10 px-2.5 py-0.5 rounded border border-[#00DF89]/30">
+                              ⚡ Can Improve Representation
+                            </span>
+                          )}
+                          {gap.classification === 'category_c_missing' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-950/40 px-2.5 py-0.5 rounded border border-rose-800/50">
+                              ✕ Missing Skill Gap
+                            </span>
+                          )}
+                          {gap.classification === 'category_d_uncertain' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400 bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-800/50">
+                              ❓ Needs Confirmation
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* PART 3: Fixed Clean Resume Section & Location Context Header */}
+                      {gap.supportingEvidence && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 flex items-center gap-2">
+                            <span className="text-[#00DF89] font-bold shrink-0">📍 Resume Section:</span>
+                            <span className="text-white font-semibold truncate capitalize">
+                              {gap.supportingEvidence.sectionType}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 flex items-center gap-2 min-w-0">
+                            <span className="text-slate-400 font-bold shrink-0">Role / Context:</span>
+                            <span className="text-slate-200 font-medium truncate">
+                              {gap.supportingEvidence.roleOrCompany || gap.supportingEvidence.sectionHeading}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Explanation of Gap */}
+                      <p className="text-slate-300 leading-relaxed text-xs">
+                        {gap.explanation}
+                      </p>
+
+                      {/* CATEGORY A: Display supporting evidence bullet directly */}
+                      {gap.classification === 'category_a_matched' && gap.supportingEvidence && (
+                        <div className="p-3 bg-[#070B14] rounded-lg border border-emerald-900/40 text-slate-300 space-y-1">
+                          <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                            Supporting Resume Evidence:
+                          </div>
+                          <div className="italic text-slate-200">
+                            "{gap.supportingEvidence.originalBullet}"
+                          </div>
+                        </div>
+                      )}
+
+                      {/* CATEGORY B: Evidence-backed improvement with editable field and Apply to Resume */}
+                      {gap.classification === 'category_b_improve' && gap.supportingEvidence && (
+                        <div className="space-y-3 pt-1">
+                          {/* Original wording */}
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              Original Bullet in Resume:
+                            </span>
+                            <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 text-slate-400 italic mt-1">
+                              "{gap.supportingEvidence.originalBullet}"
+                            </div>
+                          </div>
+
+                          {/* Editable proposed improvement */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-wider">
+                                Proposed Truthful Enhancement (Editable):
+                              </span>
+                              <span className="text-[10px] text-slate-400">Review before applying</span>
+                            </div>
+                            <textarea
+                              rows={3}
+                              value={
+                                editedSuggestions[gap.id] !== undefined
+                                  ? editedSuggestions[gap.id]
+                                  : gap.recommendedImprovement || ''
+                              }
+                              onChange={(e) =>
+                                setEditedSuggestions({ ...editedSuggestions, [gap.id]: e.target.value })
+                              }
+                              disabled={isApplied}
+                              className="w-full p-2.5 bg-[#070B14] border border-[#00DF89]/40 rounded-lg text-white font-medium text-xs focus:outline-none focus:border-[#00DF89] leading-relaxed disabled:opacity-70"
+                            ></textarea>
+                          </div>
+
+                          {/* Apply Action (Strictly Evidence-Backed) */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                            <span className="text-[11px] text-slate-400">
+                              Replaces the original bullet in your resume and highlights it in Resume Studio.
+                            </span>
+
+                            {onUpdateResume && (
+                              <button
+                                type="button"
+                                onClick={() => handleApplyGapImprovement(gap)}
+                                disabled={isApplied}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
+                                  isApplied
+                                    ? 'bg-[#00DF89]/20 text-[#00DF89] border border-[#00DF89]/40 cursor-default'
+                                    : 'bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 shadow-md hover:scale-[1.01]'
+                                }`}
+                              >
+                                {isApplied ? 'Applied to Resume ✓' : 'Apply to Resume →'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* CATEGORY C: Genuinely missing skill (NO Apply to Resume button!) */}
+                      {gap.classification === 'category_c_missing' && (
+                        <div className="p-3.5 bg-rose-950/20 rounded-xl border border-rose-900/40 space-y-2">
+                          <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                            <span>🛡️ Integrity Check: Genuinely Unsupported Requirement</span>
+                          </div>
+                          <p className="text-slate-400 text-xs leading-relaxed">
+                            {gap.recommendedAction}
+                          </p>
+                          <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2 rounded border border-slate-800">
+                            <strong>Note:</strong> In accordance with resume integrity standards, an "Apply to Resume" action is not offered for skills not demonstrated in your experience history.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* CATEGORY D: Uncertain / Needs confirmation */}
+                      {gap.classification === 'category_d_uncertain' && (
+                        <div className="p-3.5 bg-amber-950/20 rounded-xl border border-amber-900/40 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-300 text-xs">
+                              Candidate Confirmation Required:
+                            </span>
+                            {isConfirmed && (
+                              <span className="text-[10px] text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800">
+                                Verified by Candidate ✓
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-300 text-xs">
+                            {gap.recommendedAction}
+                          </p>
+
+                          {!isConfirmed ? (
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmCandidateExperience(gap.id, true)}
+                                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors"
+                              >
+                                I have hands-on experience with {gap.requirement}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmCandidateExperience(gap.id, false)}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-xs transition-colors"
+                              >
+                                I do not have this skill
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 bg-emerald-950/30 rounded-lg border border-emerald-800 text-emerald-200 text-xs">
+                              Experience confirmed! You can now add verified details directly into your work experience in Resume Studio.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -845,71 +1286,6 @@ export const Match: React.FC<MatchProps> = ({
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Smart Bullet Rewriter (With Resume Location and Strict User Action) */}
-          <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">Optimization Engine</span>
-                <h3 className="text-sm font-bold text-white mt-0.5">
-                  Targeted Bullet Point Rewrites
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Transforms unquantified resume lines into high-agency executive achievement statements. Shows original resume section heading.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {analysis.bulletRewrites.map((rw: BulletRewrite, i: number) => {
-                const isApplied = appliedRewrites[i];
-                return (
-                  <div key={i} className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2.5 text-xs">
-                    {/* Resume Location Heading */}
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#070B14] border border-slate-700 text-slate-300 text-[11px] font-medium">
-                        <span className="text-[#00DF89] font-bold">📍 Resume Section Location:</span>
-                        <span className="text-white font-semibold">{rw.sectionHeading || 'Work Experience'}</span>
-                      </div>
-                      {isApplied && (
-                        <span className="text-[11px] font-bold text-[#00DF89] bg-[#00DF89]/10 px-2 py-0.5 rounded border border-[#00DF89]/30">
-                          Updated in Resume Studio ✓
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Original: </span>
-                      <span className="text-slate-400 italic">"{rw.original}"</span>
-                    </div>
-
-                    <div className="p-3 bg-[#070B14] rounded-lg border border-[#00DF89]/30 text-slate-200 font-medium flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                      <div className="leading-relaxed">
-                        <span className="font-bold text-[#00DF89]">Improved: </span>
-                        {rw.improved}
-                      </div>
-
-                      {onUpdateResume && (
-                        <button
-                          onClick={() => handleApplyRewrite(rw.original, rw.improved, i)}
-                          disabled={isApplied}
-                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                            isApplied
-                              ? 'bg-[#00DF89]/20 text-[#00DF89] border border-[#00DF89]/40 cursor-default'
-                              : 'bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 shadow-md hover:scale-[1.02]'
-                          }`}
-                        >
-                          {isApplied ? 'Applied to Resume ✓' : 'Apply to Resume →'}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="text-[11px] text-slate-400">{rw.reason}</div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </div>

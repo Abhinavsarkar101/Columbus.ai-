@@ -315,16 +315,19 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Location & LinkedIn URL</label>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Location</label>
                   <input
                     type="text"
                     value={resumeData.location}
-                    placeholder="Bengaluru, India"
+                    placeholder="e.g. Bengaluru, India"
                     onChange={(e) => onUpdateResume({ ...resumeData, location: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-[#00DF89]"
                   />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">LinkedIn Profile URL</label>
                   <input
                     type="text"
                     value={resumeData.linkedinUrl}

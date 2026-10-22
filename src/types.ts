@@ -172,6 +172,39 @@ export interface AtsCheckResult {
   message: string;
 }
 
+export type GapClassification =
+  | 'category_a_matched'
+  | 'category_b_improve'
+  | 'category_c_missing'
+  | 'category_d_uncertain';
+
+export interface RequirementGap {
+  id: string;
+  requirement: string;
+  category: string;
+  importance: 'critical' | 'important' | 'preferred';
+  classification: GapClassification;
+  explanation: string;
+  supportingEvidence?: {
+    originalBullet: string;
+    sectionHeading: string;
+    roleOrCompany?: string;
+    sectionType: 'experience' | 'projects' | 'skills' | 'summary';
+    expIndex?: number;
+    bulletIndex?: number;
+  };
+  recommendedImprovement?: string;
+  recommendedAction?: string;
+  status?: 'unresolved' | 'applied' | 'confirmed';
+}
+
+export interface JDAnalysisSummary {
+  matchedCount: number;
+  improveCount: number;
+  missingCount: number;
+  uncertainCount: number;
+}
+
 export interface BulletRewrite {
   original: string;
   improved: string;
@@ -188,6 +221,8 @@ export interface JDAnalysis {
   missingKeywords: { term: string; category: string; importance: 'critical' | 'recommended' | 'bonus' }[];
   atsChecks: AtsCheckResult[];
   bulletRewrites: BulletRewrite[];
+  requirementGaps: RequirementGap[];
+  summary: JDAnalysisSummary;
   inferredRole: string;
   requirementsCount: number;
 }
