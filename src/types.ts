@@ -161,6 +161,7 @@ export interface ResumeData {
   }[];
   certifications: string[];
   targetDomain: DomainId;
+  optimizedBullets?: string[];
 }
 
 export interface AtsCheckResult {
@@ -171,6 +172,13 @@ export interface AtsCheckResult {
   message: string;
 }
 
+export interface BulletRewrite {
+  original: string;
+  improved: string;
+  reason: string;
+  sectionHeading?: string;
+}
+
 export interface JDAnalysis {
   overallMatch: number; // 0-100
   keywordCoverage: number;
@@ -179,7 +187,7 @@ export interface JDAnalysis {
   matchedKeywords: { term: string; count: number; category: string }[];
   missingKeywords: { term: string; category: string; importance: 'critical' | 'recommended' | 'bonus' }[];
   atsChecks: AtsCheckResult[];
-  bulletRewrites: { original: string; improved: string; reason: string }[];
+  bulletRewrites: BulletRewrite[];
   inferredRole: string;
   requirementsCount: number;
 }

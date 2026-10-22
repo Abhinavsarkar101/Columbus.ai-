@@ -48,6 +48,8 @@ export const ResumePage: React.FC<ResumePageProps> = ({
 
   const handleDownloadPdf = async () => {
     setIsExportingPdf(true);
+    // Allow state change to flush highlights off the DOM before taking snapshot
+    await new Promise((resolve) => setTimeout(resolve, 150));
     const namePart = (resumeData.fullName || 'Candidate').replace(/\s+/g, '_');
     const success = await exportResumeToPdf('resume-sheet', `${namePart}_Resume.pdf`);
     setIsExportingPdf(false);
@@ -376,22 +378,34 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    {exp.bullets.map((b, bIdx) => (
-                      <div key={bIdx} className="flex gap-2">
-                        <textarea
-                          rows={2}
-                          value={b}
-                          onChange={(e) => handleUpdateExperienceBullet(expIdx, bIdx, e.target.value)}
-                          className="flex-1 p-2 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                        />
-                        <button
-                          onClick={() => handleDeleteExperienceBullet(expIdx, bIdx)}
-                          className="text-slate-500 hover:text-rose-400 font-bold px-1.5"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                    {exp.bullets.map((b, bIdx) => {
+                      const isOptimized = Boolean(resumeData.optimizedBullets?.includes(b));
+                      return (
+                        <div key={bIdx} className="space-y-1">
+                          {isOptimized && (
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#00DF89]">
+                              <span>✨ ATS Optimized via Match Engine</span>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <textarea
+                              rows={2}
+                              value={b}
+                              onChange={(e) => handleUpdateExperienceBullet(expIdx, bIdx, e.target.value)}
+                              className={`flex-1 p-2 bg-slate-950 border rounded text-xs text-white ${
+                                isOptimized ? 'border-[#00DF89]/60 bg-emerald-950/20' : 'border-slate-700'
+                              }`}
+                            />
+                            <button
+                              onClick={() => handleDeleteExperienceBullet(expIdx, bIdx)}
+                              className="text-slate-500 hover:text-rose-400 font-bold px-1.5"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <button
@@ -488,11 +502,27 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                           <span>{exp.location}</span>
                         </div>
                         <ul className="list-disc list-outside pl-4 space-y-1 text-slate-700">
-                          {exp.bullets.map((b, i) => (
-                            <li key={i} className="leading-relaxed">
-                              {b}
-                            </li>
-                          ))}
+                          {exp.bullets.map((b, i) => {
+                            const isOptimized = Boolean(resumeData.optimizedBullets?.includes(b));
+                            const showHighlight = isOptimized && !isExportingPdf;
+                            return (
+                              <li
+                                key={i}
+                                className={`leading-relaxed transition-all ${
+                                  showHighlight
+                                    ? 'bg-emerald-50 text-emerald-950 font-medium px-2 py-0.5 rounded border-l-2 border-emerald-500'
+                                    : ''
+                                }`}
+                              >
+                                {b}
+                                {showHighlight && (
+                                  <span className="ml-2 inline-flex items-center text-[9px] font-bold text-emerald-800 bg-emerald-100/90 px-1.5 py-0.2 rounded uppercase tracking-wider print:hidden">
+                                    ✨ ATS Optimized
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ))}
@@ -618,9 +648,27 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                           </div>
                           <div className="text-slate-600 font-semibold">{exp.company} · {exp.location}</div>
                           <ul className="list-disc pl-4 space-y-1 text-slate-700 pt-0.5">
-                            {exp.bullets.map((b, i) => (
-                              <li key={i}>{b}</li>
-                            ))}
+                            {exp.bullets.map((b, i) => {
+                              const isOptimized = Boolean(resumeData.optimizedBullets?.includes(b));
+                              const showHighlight = isOptimized && !isExportingPdf;
+                              return (
+                                <li
+                                  key={i}
+                                  className={`leading-relaxed transition-all ${
+                                    showHighlight
+                                      ? 'bg-emerald-50 text-emerald-950 font-medium px-2 py-0.5 rounded border-l-2 border-emerald-500'
+                                      : ''
+                                  }`}
+                                >
+                                  {b}
+                                  {showHighlight && (
+                                    <span className="ml-2 inline-flex items-center text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1 rounded print:hidden">
+                                      ATS Optimized
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            })}
                           </ul>
                         </div>
                       ))}
@@ -670,9 +718,27 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                           <span className="font-sans font-normal text-slate-600">{exp.startDate} - {exp.current ? 'Present' : exp.endDate}</span>
                         </div>
                         <ul className="list-disc pl-4 space-y-1 text-slate-800">
-                          {exp.bullets.map((b, i) => (
-                            <li key={i}>{b}</li>
-                          ))}
+                          {exp.bullets.map((b, i) => {
+                            const isOptimized = Boolean(resumeData.optimizedBullets?.includes(b));
+                            const showHighlight = isOptimized && !isExportingPdf;
+                            return (
+                              <li
+                                key={i}
+                                className={`leading-relaxed transition-all ${
+                                  showHighlight
+                                    ? 'bg-emerald-50 text-emerald-950 font-medium px-2 py-0.5 rounded border-l-2 border-emerald-500 font-sans'
+                                    : ''
+                                }`}
+                              >
+                                {b}
+                                {showHighlight && (
+                                  <span className="ml-2 inline-flex items-center text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1 rounded font-sans print:hidden">
+                                    ATS Optimized
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ))}

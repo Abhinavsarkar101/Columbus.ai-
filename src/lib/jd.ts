@@ -1,5 +1,5 @@
 import { ROLES } from '../data/roles';
-import { AtsCheckResult, JDAnalysis, ResumeData } from '../types';
+import { AtsCheckResult, BulletRewrite, JDAnalysis, ResumeData } from '../types';
 
 export interface TaxonomyTerm {
   term: string;
@@ -166,8 +166,26 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
 
   const keywordCoverage = totalWeightedTerms > 0 ? Math.round((matchedWeightedTerms / totalWeightedTerms) * 100) : 50;
 
-  // Quantified impact score: checks what % of resume bullets contain numbers, percentages, or currency
-  const allBullets = resume.experience.flatMap((e) => e.bullets);
+  // Extract bullets along with their resume section headings
+  interface TaggedBullet {
+    text: string;
+    sectionHeading: string;
+  }
+  const taggedBullets: TaggedBullet[] = [];
+  for (const exp of resume.experience) {
+    const heading = `Experience: ${exp.role} at ${exp.company}`;
+    for (const b of exp.bullets) {
+      taggedBullets.push({ text: b, sectionHeading: heading });
+    }
+  }
+  for (const proj of resume.projects) {
+    const heading = `Projects: ${proj.name}`;
+    for (const b of proj.bullets) {
+      taggedBullets.push({ text: b, sectionHeading: heading });
+    }
+  }
+
+  const allBullets = taggedBullets.map((tb) => tb.text);
   const metricRegex = /(\d+[\.,]?\d*|\$|₹|%|bps|x|lpa|crore|million|billion|k\b)/i;
   const quantifiedBullets = allBullets.filter((b) => metricRegex.test(b));
   const quantifiedImpactScore = allBullets.length > 0 ? Math.round((quantifiedBullets.length / allBullets.length) * 100) : 0;
@@ -244,24 +262,26 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
   }
 
   // Bullet rewrites generator: find unquantified or weak bullets and suggest MBA impact versions
-  const bulletRewrites: { original: string; improved: string; reason: string }[] = [];
-  for (const bullet of allBullets.slice(0, 3)) {
-    if (!metricRegex.test(bullet) || bullet.length < 75) {
-      const improved = bullet.replace(/managed|worked on|helped with|responsible for/gi, 'Spearheaded')
+  const bulletRewrites: BulletRewrite[] = [];
+  for (const item of taggedBullets.slice(0, 3)) {
+    if (!metricRegex.test(item.text) || item.text.length < 75) {
+      const improved = item.text.replace(/managed|worked on|helped with|responsible for/gi, 'Spearheaded')
         + ', driving a 24% operational efficiency gain and saving $140K in annual overhead.';
       bulletRewrites.push({
-        original: bullet,
+        original: item.text,
         improved: improved,
-        reason: 'Adds high-agency leadership action verb and quantified metric result (XYZ framework: Accomplished [X] by doing [Y] as measured by [Z]).',
+        sectionHeading: item.sectionHeading,
+        reason: 'Adds high-agency leadership action verb and quantified metric result (Accomplished action with measurable business impact).',
       });
     }
   }
 
   // Fallback sample rewrite if candidate bullets are all already quantified
-  if (bulletRewrites.length === 0 && allBullets.length > 0) {
+  if (bulletRewrites.length === 0 && taggedBullets.length > 0) {
     bulletRewrites.push({
-      original: allBullets[0],
+      original: taggedBullets[0].text,
       improved: `Optimized cross-functional workflow across 4 engineering pods, accelerating product sprint velocity by 32% and reducing customer onboarding churn from 14% to 4.5%.`,
+      sectionHeading: taggedBullets[0].sectionHeading,
       reason: 'Elevates scope, cross-functional stakeholder scale, and dual outcome metrics.',
     });
   }
