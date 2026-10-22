@@ -1,6 +1,6 @@
 {
-  "summary":  "Completed implementation of dual enrollment tracks (Aspiring vs Enrolled) under 'I want to find my specialization': 10 concise personality & intuitive logic questions without corporate jargon for aspiring candidates, 10 accessible real-world business scenarios without jargon for 1st-year enrolled candidates, Personality Archetype identification, and Dual Specialization pairing recommendations.",
-  "updatedAt":  "2026-10-21T10:14:53.456951622Z",
+  "summary":  "Implementation plan to update Job Description Matcher with job URL link fetching and pasting, remove XYZ Framework mention, and add one-click Apply-to-Resume buttons on improved bullet points with strict user consent.",
+  "updatedAt":  "2026-10-22T05:14:24.965270719Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

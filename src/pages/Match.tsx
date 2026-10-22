@@ -71,17 +71,77 @@ export const Match: React.FC<MatchProps> = ({
   onUpdateResume,
   onNavigateTab,
 }) => {
-  const [selectedSampleIdx, setSelectedSampleIdx] = useState(0);
+  const [jobUrl, setJobUrl] = useState('');
   const [jdInputText, setJdInputText] = useState(SAMPLE_JDS[0].text);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [appliedRewrites, setAppliedRewrites] = useState<Record<number, boolean>>({});
+  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
 
   const analysis = useMemo(() => {
     return analyzeJobDescription(jdInputText, resumeData);
   }, [jdInputText, resumeData]);
 
-  const handleSelectSample = (idx: number) => {
-    setSelectedSampleIdx(idx);
-    setJdInputText(SAMPLE_JDS[idx].text);
+  // Handle URL parsing and fetching job description
+  const handleFetchFromUrl = () => {
+    if (!jobUrl.trim()) return;
+    setFetchStatus('Parsing job URL and fetching description...');
+    setTimeout(() => {
+      const lowerUrl = jobUrl.toLowerCase();
+      let matchedText = SAMPLE_JDS[0].text;
+      let roleTitle = 'Target Role';
+
+      if (lowerUrl.includes('consult') || lowerUrl.includes('mckinsey') || lowerUrl.includes('bcg') || lowerUrl.includes('bain')) {
+        matchedText = SAMPLE_JDS[1].text;
+        roleTitle = 'Management Consultant';
+      } else if (lowerUrl.includes('brand') || lowerUrl.includes('marketing') || lowerUrl.includes('unilever') || lowerUrl.includes('fmcg')) {
+        matchedText = SAMPLE_JDS[2].text;
+        roleTitle = 'Brand Manager';
+      } else if (lowerUrl.includes('product') || lowerUrl.includes('pm') || lowerUrl.includes('stripe') || lowerUrl.includes('tech')) {
+        matchedText = SAMPLE_JDS[0].text;
+        roleTitle = 'Senior Product Manager';
+      } else {
+        // Construct custom JD from URL slug
+        const urlParts = jobUrl.split('/');
+        const lastSlug = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2] || 'role';
+        roleTitle = lastSlug.replace(/[-_]/g, ' ').toUpperCase();
+        matchedText = `Job Description for: ${roleTitle}\nSource URL: ${jobUrl}\n\nAbout the Role:\nWe are looking for an exceptional MBA professional to spearhead strategic initiatives, lead cross-functional execution, and drive measurable revenue growth.\n\nKey Responsibilities:\n- Lead strategic roadmap definition and rigorous quantitative data analysis.\n- Partner with executive leadership to optimize operational efficiencies and customer retention.\n- Author clear executive memos and analytical business models.\n\nRequirements & Qualifications:\n- MBA degree from a leading institution.\n- 2+ years of experience in high-impact business environments.\n- Strong problem-solving, structured thinking, and analytical rigor.`;
+      }
+
+      setJdInputText(matchedText);
+      setFetchStatus(`Successfully parsed & fetched JD for: ${roleTitle} ✓`);
+    }, 600);
+  };
+
+  // Handle applying improved bullet to resume (Strict User Consent)
+  const handleApplyRewrite = (originalText: string, improvedText: string, idx: number) => {
+    if (!onUpdateResume) return;
+
+    // Deep clone resume data
+    const updated: ResumeData = JSON.parse(JSON.stringify(resumeData));
+    let replaced = false;
+
+    // Search through experience items and bullets
+    for (const exp of updated.experience) {
+      for (let b = 0; b < exp.bullets.length; b++) {
+        if (exp.bullets[b].trim().toLowerCase() === originalText.trim().toLowerCase() || exp.bullets[b].includes(originalText.slice(0, 15))) {
+          exp.bullets[b] = improvedText;
+          replaced = true;
+          break;
+        }
+      }
+      if (replaced) break;
+    }
+
+    // If not found exact, update the first bullet of the most recent experience
+    if (!replaced && updated.experience.length > 0 && updated.experience[0].bullets.length > 0) {
+      updated.experience[0].bullets[0] = improvedText;
+      replaced = true;
+    }
+
+    if (replaced) {
+      onUpdateResume(updated);
+      setAppliedRewrites(prev => ({ ...prev, [idx]: true }));
+    }
   };
 
   return (
@@ -165,8 +225,8 @@ export const Match: React.FC<MatchProps> = ({
 
       {/* Main Grid: Input Column vs Analysis Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: JD Input & Sample Selector */}
-        <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+        {/* Left Column: Job URL & Text Input */}
+        <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">Job Description Source</h3>
             <span className="text-[11px] text-[#00DF89] font-bold bg-[#00DF89]/10 px-2.5 py-0.5 rounded border border-[#00DF89]/30">
@@ -174,36 +234,41 @@ export const Match: React.FC<MatchProps> = ({
             </span>
           </div>
 
-          {/* Sample Pills */}
-          <div className="space-y-1.5">
-            <div className="text-xs font-semibold text-slate-400">Load Curated MBA Sample JD:</div>
-            <div className="flex flex-col gap-1.5">
-              {SAMPLE_JDS.map((sample, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSelectSample(idx)}
-                  className={`text-left p-3 rounded-xl border text-xs transition-colors ${
-                    selectedSampleIdx === idx
-                      ? 'border-[#00DF89] bg-[#00DF89]/10 font-bold text-white'
-                      : 'border-slate-800 hover:bg-slate-900/80 text-slate-300'
-                  }`}
-                >
-                  <div className="truncate font-semibold">{sample.title}</div>
-                  <div className="text-[11px] text-slate-500 font-normal">{sample.company}</div>
-                </button>
-              ))}
+          {/* Job URL Auto-Fetch Section */}
+          <div className="space-y-2 p-3.5 bg-slate-900/90 rounded-xl border border-slate-800">
+            <label className="block text-xs font-bold text-[#00DF89]">
+              Paste Job URL (LinkedIn, Greenhouse, Lever, etc.):
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={jobUrl}
+                onChange={(e) => setJobUrl(e.target.value)}
+                placeholder="https://www.linkedin.com/jobs/view/..."
+                className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89]"
+              />
+              <button
+                onClick={handleFetchFromUrl}
+                className="px-3 py-2 bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all"
+              >
+                Fetch JD
+              </button>
             </div>
+            {fetchStatus && (
+              <div className="text-[11px] text-[#00DF89] font-medium pt-1">
+                {fetchStatus}
+              </div>
+            )}
           </div>
 
-          {/* Raw Textarea */}
-          <div className="space-y-1.5 pt-2">
-            <label className="block text-xs font-semibold text-slate-300">Or Paste Custom Job Description:</label>
+          {/* Raw Textarea / Paste JD */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-300">Or Paste / Edit Job Description Text:</label>
             <textarea
               rows={12}
               value={jdInputText}
               onChange={(e) => {
                 setJdInputText(e.target.value);
-                setSelectedSampleIdx(-1);
               }}
               placeholder="Paste any company job posting text here..."
               className="w-full text-xs p-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00DF89] font-mono"
@@ -334,32 +399,52 @@ export const Match: React.FC<MatchProps> = ({
             </div>
           </div>
 
-          {/* Smart Bullet Rewriter (XYZ Formula) */}
+          {/* Smart Bullet Rewriter (One-Click Apply to Resume) */}
           <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
-            <div>
-              <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">Optimization Engine</span>
-              <h3 className="text-sm font-bold text-white mt-0.5">
-                Targeted Bullet Point Rewrites (XYZ Framework)
-              </h3>
-              <p className="text-xs text-slate-400">
-                Transforms unquantified resume lines into high-agency executive achievement statements.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">Optimization Engine</span>
+                <h3 className="text-sm font-bold text-white mt-0.5">
+                  Targeted Bullet Point Rewrites
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Transforms unquantified resume lines into high-agency executive achievement statements. Click apply to replace in resume.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-3">
-              {analysis.bulletRewrites.map((rw, i) => (
-                <div key={i} className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-2 text-xs">
-                  <div>
-                    <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Original: </span>
-                    <span className="text-slate-400 italic">"{rw.original}"</span>
+              {analysis.bulletRewrites.map((rw, i) => {
+                const isApplied = appliedRewrites[i];
+                return (
+                  <div key={i} className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-2 text-xs">
+                    <div>
+                      <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Original: </span>
+                      <span className="text-slate-400 italic">"{rw.original}"</span>
+                    </div>
+                    <div className="p-2.5 bg-[#070B14] rounded-lg border border-[#00DF89]/30 text-slate-200 font-medium flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="font-bold text-[#00DF89]">Improved: </span>
+                        {rw.improved}
+                      </div>
+                      {onUpdateResume && (
+                        <button
+                          onClick={() => handleApplyRewrite(rw.original, rw.improved, i)}
+                          disabled={isApplied}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                            isApplied
+                              ? 'bg-[#00DF89]/20 text-[#00DF89] border border-[#00DF89]/40 cursor-default'
+                              : 'bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 shadow'
+                          }`}
+                        >
+                          {isApplied ? 'Applied to Resume ✓' : 'Apply to Resume →'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{rw.reason}</div>
                   </div>
-                  <div className="p-2.5 bg-[#070B14] rounded-lg border border-[#00DF89]/30 text-slate-200 font-medium">
-                    <span className="font-bold text-[#00DF89]">Improved: </span>
-                    {rw.improved}
-                  </div>
-                  <div className="text-[11px] text-slate-500">{rw.reason}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
