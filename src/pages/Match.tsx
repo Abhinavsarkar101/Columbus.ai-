@@ -10,6 +10,15 @@ interface MatchProps {
   onNavigateTab: (tab: string) => void;
 }
 
+export interface ViewedJob {
+  id: string;
+  jobTitle: string;
+  companyName: string;
+  jobDescription: string;
+  sourceUrl: string;
+  importedAt: number;
+}
+
 export interface MbaRolePreset {
   id: string;
   title: string;
@@ -154,70 +163,262 @@ Requirements:
   },
 ];
 
+const INITIAL_PRESET_JOBS: ViewedJob[] = MBA_ROLES_CATALOG.slice(0, 4).map((role) => ({
+  id: `preset-${role.id}`,
+  jobTitle: role.title,
+  companyName: role.company,
+  jobDescription: role.text,
+  sourceUrl: 'Curated MBA Role',
+  importedAt: Date.now() - 3600000,
+}));
+
 export const Match: React.FC<MatchProps> = ({
   resumeData,
   onUpdateResume,
   onNavigateTab,
 }) => {
   const [jobUrl, setJobUrl] = useState('');
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('pm');
-  const [jdInputText, setJdInputText] = useState(MBA_ROLES_CATALOG[0].text);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [appliedRewrites, setAppliedRewrites] = useState<Record<number, boolean>>({});
-  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState<{
+    type: 'idle' | 'loading' | 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // Previously Viewed Jobs state initialized from localStorage
+  const [previouslyViewedJobs, setPreviouslyViewedJobs] = useState<ViewedJob[]>(() => {
+    try {
+      const saved = localStorage.getItem('columbus_viewed_jobs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // safe fallback
+    }
+    return INITIAL_PRESET_JOBS;
+  });
+
+  const [activeJobId, setActiveJobId] = useState<string>(() => {
+    return previouslyViewedJobs[0]?.id || 'preset-pm';
+  });
+
   const [fetchedJobMeta, setFetchedJobMeta] = useState<{
     title: string;
     company: string;
     source: string;
-  }>({
-    title: MBA_ROLES_CATALOG[0].title,
-    company: MBA_ROLES_CATALOG[0].company,
-    source: 'Default MBA Role',
+  }>(() => {
+    const first = previouslyViewedJobs[0];
+    return {
+      title: first ? first.jobTitle : MBA_ROLES_CATALOG[0].title,
+      company: first ? first.companyName : MBA_ROLES_CATALOG[0].company,
+      source: first ? first.sourceUrl : 'Default MBA Role',
+    };
   });
 
+  // Controlled textarea bound directly to jdInputText
+  const [jdInputText, setJdInputText] = useState<string>(() => {
+    return previouslyViewedJobs[0]?.jobDescription || MBA_ROLES_CATALOG[0].text;
+  });
+
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [appliedRewrites, setAppliedRewrites] = useState<Record<number, boolean>>({});
+
+  // Analysis updates immediately whenever jdInputText or resumeData changes
   const analysis = useMemo(() => {
     return analyzeJobDescription(jdInputText, resumeData);
   }, [jdInputText, resumeData]);
 
-  // Handle clicking a job role button -> updates JD immediately and changes description box
-  const handleSelectRole = (role: MbaRolePreset) => {
-    setSelectedRoleId(role.id);
-    setJdInputText(role.text);
-    setFetchedJobMeta({
-      title: role.title,
-      company: role.company,
-      source: 'Curated Role Selection',
-    });
-    setFetchStatus(`Loaded official JD for ${role.title} ✓`);
+  const saveViewedJobs = (jobs: ViewedJob[]) => {
+    setPreviouslyViewedJobs(jobs);
+    try {
+      localStorage.setItem('columbus_viewed_jobs', JSON.stringify(jobs));
+    } catch {
+      // safe fallback
+    }
   };
 
-  // Handle URL parsing and fetching job description via backend API
-  const handleFetchFromUrl = async () => {
-    if (!jobUrl.trim()) return;
-    setFetchStatus('Fetching job description from server...');
+  // Switching active job from Previously Viewed Jobs
+  const handleSelectViewedJob = (job: ViewedJob) => {
+    setActiveJobId(job.id);
+    setFetchedJobMeta({
+      title: job.jobTitle,
+      company: job.companyName,
+      source: job.sourceUrl,
+    });
+    // Immediately populate textarea with saved description
+    setJdInputText(job.jobDescription);
+    setFetchStatus({
+      type: 'success',
+      message: `Loaded job description for "${job.jobTitle}" ✓`,
+    });
+  };
+
+  // Remove single job from history
+  const handleRemoveViewedJob = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const nextList = previouslyViewedJobs.filter((j) => j.id !== id);
+    saveViewedJobs(nextList);
+    if (activeJobId === id && nextList.length > 0) {
+      handleSelectViewedJob(nextList[0]);
+    }
+  };
+
+  // Handle URL import and extraction
+  const handleFetchFromUrl = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = jobUrl.trim();
+    if (!trimmed) {
+      setFetchStatus({
+        type: 'error',
+        message: 'Please paste a valid job posting URL first.',
+      });
+      return;
+    }
+
+    // Client-side URL validation
+    try {
+      const parsed = new URL(trimmed);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        setFetchStatus({
+          type: 'error',
+          message: 'URL must start with http:// or https://',
+        });
+        return;
+      }
+    } catch {
+      setFetchStatus({
+        type: 'error',
+        message: 'The URL entered is invalid. Please verify the web address and try again.',
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    setFetchStatus({
+      type: 'loading',
+      message: 'Retrieving & extracting full job description from link...',
+    });
 
     try {
       const res = await fetch('/api/fetch-jd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: jobUrl }),
+        body: JSON.stringify({ url: trimmed }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch job description from URL.');
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response
       }
 
-      setJdInputText(data.text);
+      // Check if server endpoint returned 404 (e.g. GitHub Pages static hosting fallback)
+      if (!res.ok || !data || !data.success) {
+        if (res.status === 404) {
+          try {
+            const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(trimmed)}`);
+            if (proxyRes.ok) {
+              const html = await proxyRes.text();
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(html, 'text/html');
+              let title = doc.querySelector('title')?.textContent || 'Imported Job';
+              let company = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || 'Target Employer';
+              let description = '';
+
+              const scripts = doc.querySelectorAll('script[type="application/ld+json"]');
+              for (let i = 0; i < scripts.length; i++) {
+                try {
+                  const j = JSON.parse(scripts[i].textContent || '{}');
+                  const items = Array.isArray(j) ? j : j['@graph'] ? j['@graph'] : [j];
+                  const posting = items.find((it: any) => it['@type'] === 'JobPosting');
+                  if (posting && posting.description) {
+                    title = posting.title || title;
+                    company = posting.hiringOrganization?.name || company;
+                    description = posting.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                    break;
+                  }
+                } catch {
+                  // continue
+                }
+              }
+
+              if (!description) {
+                const mainEl = doc.querySelector('main, article, [class*="description"]');
+                if (mainEl && mainEl.textContent && mainEl.textContent.length > 100) {
+                  description = mainEl.textContent.replace(/\s+/g, ' ').trim();
+                }
+              }
+
+              if (description && description.length > 60) {
+                data = {
+                  success: true,
+                  text: description.slice(0, 15000),
+                  title: title.trim(),
+                  company: company.trim(),
+                  sourceUrl: trimmed,
+                };
+              }
+            }
+          } catch {
+            // ignore proxy failure
+          }
+        }
+
+        if (!data || !data.success) {
+          throw new Error(
+            data?.error ||
+              `Unable to fetch job description (HTTP ${res.status}). The website may require login or block automated access. You can paste the text directly into the Job Description box below.`
+          );
+        }
+      }
+
+      const fetchedTitle = data.title || 'Job Role';
+      const fetchedCompany = data.company || 'Target Employer';
+      const fetchedText = data.text;
+      const normalizedId = trimmed.toLowerCase().replace(/\/+$/, '');
+
+      const newJob: ViewedJob = {
+        id: normalizedId,
+        jobTitle: fetchedTitle,
+        companyName: fetchedCompany,
+        jobDescription: fetchedText,
+        sourceUrl: trimmed,
+        importedAt: Date.now(),
+      };
+
+      // Add to Previously Viewed Jobs (deduplicate, move latest to top)
+      const filtered = previouslyViewedJobs.filter(
+        (j) => j.id !== normalizedId && j.sourceUrl.toLowerCase() !== trimmed.toLowerCase()
+      );
+      const nextList = [newJob, ...filtered];
+      saveViewedJobs(nextList);
+
+      // Set active job reference
+      setActiveJobId(newJob.id);
       setFetchedJobMeta({
-        title: data.title || 'Imported Job Role',
-        company: data.company || 'Target Enterprise',
-        source: jobUrl,
+        title: fetchedTitle,
+        company: fetchedCompany,
+        source: trimmed,
       });
-      setFetchStatus(`Successfully imported JD: ${data.title || 'Job Role'} ✓`);
+
+      // Automatically fill the Job Description text area
+      setJdInputText(fetchedText);
+
+      setFetchStatus({
+        type: 'success',
+        message: `Successfully imported "${fetchedTitle}" (${fetchedCompany}) ✓`,
+      });
     } catch (err: any) {
-      setFetchStatus(`Import error: ${err.message || 'Could not fetch URL.'}`);
+      // Preserve existing text in text area on error!
+      setFetchStatus({
+        type: 'error',
+        message: err.message || 'Could not fetch job posting. You can paste the job description directly below.',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -361,7 +562,7 @@ export const Match: React.FC<MatchProps> = ({
 
       {/* Main Grid: Input Column vs Analysis Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Job URL & Role Selector & Text Input */}
+        {/* Left Column: Job URL & Previously Viewed Jobs & Text Input */}
         <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">Job Description Source</h3>
@@ -375,35 +576,55 @@ export const Match: React.FC<MatchProps> = ({
             <label className="block text-xs font-bold text-[#00DF89]">
               Paste Job URL (LinkedIn, Greenhouse, Lever, etc.):
             </label>
-            <div className="flex gap-2">
+            <form onSubmit={handleFetchFromUrl} className="flex flex-col sm:flex-row gap-2">
               <input
                 type="url"
                 value={jobUrl}
                 onChange={(e) => setJobUrl(e.target.value)}
-                placeholder="https://www.linkedin.com/jobs/view/..."
-                className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89]"
+                disabled={isLoading}
+                placeholder="https://www.linkedin.com/jobs/view/... or any job posting link"
+                className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89] disabled:opacity-60 font-mono"
               />
               <button
-                onClick={handleFetchFromUrl}
-                className="px-3.5 py-2 bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow"
+                type="submit"
+                disabled={isLoading || !jobUrl.trim()}
+                className="px-3.5 py-2 bg-[#00DF89] hover:bg-[#00c97b] disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow flex items-center justify-center gap-1.5 shrink-0"
               >
-                Fetch JD
+                {isLoading ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                    <span>Importing...</span>
+                  </>
+                ) : (
+                  <span>Import Job Description</span>
+                )}
               </button>
-            </div>
+            </form>
             {fetchStatus && (
-              <div className="text-[11px] text-[#00DF89] font-medium pt-0.5">
-                {fetchStatus}
+              <div
+                className={`text-xs p-2.5 rounded-lg border flex items-start gap-2 ${
+                  fetchStatus.type === 'error'
+                    ? 'bg-rose-950/40 border-rose-900/60 text-rose-300'
+                    : fetchStatus.type === 'success'
+                    ? 'bg-emerald-950/40 border-[#00DF89]/30 text-[#00DF89]'
+                    : 'bg-slate-950/70 border-slate-800 text-slate-300'
+                }`}
+              >
+                <span className="font-bold shrink-0 mt-0.5">
+                  {fetchStatus.type === 'error' ? '⚠' : fetchStatus.type === 'success' ? '✓' : 'ℹ'}
+                </span>
+                <span className="leading-snug">{fetchStatus.message}</span>
               </div>
             )}
           </div>
 
-          {/* Prominent Active Job Title & Company Banner (Reflects fetched or selected role) */}
+          {/* Active Job Reference Section */}
           <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-[#00DF89]/40 rounded-xl space-y-1.5 shadow-lg">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-widest">
                 Active Job Reference
               </span>
-              <span className="text-[10px] text-slate-400 font-mono truncate max-w-[160px]">
+              <span className="text-[10px] text-slate-400 font-mono truncate max-w-[180px]">
                 {fetchedJobMeta.source}
               </span>
             </div>
@@ -415,40 +636,82 @@ export const Match: React.FC<MatchProps> = ({
             </div>
           </div>
 
-          {/* Clickable Target Job Role Selector */}
+          {/* Previously Viewed Jobs Section */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
-              <span>Or Click Target Job Role (Updates Box Below):</span>
-              <span className="text-[11px] text-[#00DF89]">Auto-loads JD</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-xs uppercase tracking-wider">
+                  Previously Viewed Jobs
+                </span>
+                <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
+                  {previouslyViewedJobs.length}
+                </span>
+              </div>
+              <span className="text-[11px] text-[#00DF89]">Click to load</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {MBA_ROLES_CATALOG.map((role) => {
-                const isSelected = selectedRoleId === role.id;
-                return (
-                  <button
-                    key={role.id}
-                    onClick={() => handleSelectRole(role)}
-                    className={`text-left p-2.5 rounded-xl border text-xs transition-all ${
-                      isSelected
-                        ? 'border-[#00DF89] bg-[#00DF89]/15 font-bold text-white shadow-sm'
-                        : 'border-slate-800 bg-slate-950/70 hover:bg-slate-900 text-slate-300'
-                    }`}
-                  >
-                    <div className="truncate font-semibold text-white">{role.title}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{role.company}</div>
-                  </button>
-                );
-              })}
-            </div>
+
+            {previouslyViewedJobs.length === 0 ? (
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
+                No previously viewed jobs yet. Paste any public job posting URL above to import a role.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                {previouslyViewedJobs.map((job) => {
+                  const isSelected = activeJobId === job.id;
+                  return (
+                    <button
+                      key={job.id}
+                      onClick={() => handleSelectViewedJob(job)}
+                      className={`group relative text-left p-2.5 rounded-xl border text-xs transition-all flex flex-col justify-between ${
+                        isSelected
+                          ? 'border-[#00DF89] bg-[#00DF89]/15 shadow-sm text-white ring-1 ring-[#00DF89]/40'
+                          : 'border-slate-800 bg-slate-950/70 hover:bg-slate-900 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-1">
+                          <span className="truncate font-semibold text-white leading-tight">
+                            {job.jobTitle}
+                          </span>
+                          {isSelected && (
+                            <span className="shrink-0 text-[9px] bg-[#00DF89] text-slate-950 px-1.5 py-0.2 rounded font-black uppercase">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                          {job.companyName}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60 text-[10px] text-slate-500">
+                        <span className="truncate max-w-[140px] font-mono">
+                          {job.sourceUrl.startsWith('http')
+                            ? new URL(job.sourceUrl).hostname.replace(/^www\./, '')
+                            : job.sourceUrl}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveViewedJob(e, job.id)}
+                          className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-0.5 rounded transition-opacity"
+                          title="Remove from history"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Raw Textarea / Paste JD */}
+          {/* Job Description Text Section (Fully Editable) */}
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-300">
-                Job Description Text (Changes based on selection):
+                Job Description Text (Fully Editable):
               </label>
-              <span className="text-[10px] text-slate-500">Fully Editable</span>
+              <span className="text-[10px] text-slate-500">Live ATS Alignment</span>
             </div>
             <textarea
               rows={11}
@@ -562,7 +825,7 @@ export const Match: React.FC<MatchProps> = ({
             </div>
           </div>
 
-          {/* 6 ATS System Checks */}
+          {/* 6 ATS System Diagnostics */}
           <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
             <h3 className="text-sm font-bold text-white">Automated ATS System Diagnostics</h3>
             <div className="space-y-2">
@@ -585,7 +848,7 @@ export const Match: React.FC<MatchProps> = ({
             </div>
           </div>
 
-          {/* Smart Bullet Rewriter (With Resume Location and Strict One-Click Action) */}
+          {/* Smart Bullet Rewriter (With Resume Location and Strict User Action) */}
           <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
