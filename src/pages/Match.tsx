@@ -191,97 +191,34 @@ export const Match: React.FC<MatchProps> = ({
     setFetchStatus(`Loaded official JD for ${role.title} ✓`);
   };
 
-  // Handle URL parsing and fetching job description
-  const handleFetchFromUrl = () => {
+  // Handle URL parsing and fetching job description via backend API
+  const handleFetchFromUrl = async () => {
     if (!jobUrl.trim()) return;
-    setFetchStatus('Extracting job role and fetching complete description...');
+    setFetchStatus('Fetching job description from server...');
 
-    setTimeout(() => {
-      const lower = jobUrl.toLowerCase();
-      let extractedTitle = 'Senior Product Manager';
-      let extractedCompany = 'Target Enterprise';
-      let matchedJd = MBA_ROLES_CATALOG[0].text;
-      let roleId = 'pm';
+    try {
+      const res = await fetch('/api/fetch-jd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: jobUrl }),
+      });
 
-      // Parse LinkedIn, Greenhouse, Lever, or general URLs robustly
-      if (lower.includes('linkedin.com')) {
-        extractedCompany = 'LinkedIn Verified Employer';
-        const jobIdMatch = jobUrl.match(/currentJobId=(\d+)/i) || jobUrl.match(/\/view\/([^\/?#]+)/i) || jobUrl.match(/\/jobs\/([^\/?#]+)/i);
-        if (jobIdMatch && jobIdMatch[1]) {
-          const cleanSlug = jobIdMatch[1].replace(/\d+/g, '').replace(/[-_]+/g, ' ').trim();
-          if (cleanSlug.length > 3) {
-            extractedTitle = cleanSlug.charAt(0).toUpperCase() + cleanSlug.slice(1);
-          } else {
-            extractedTitle = 'Senior Product Manager (LinkedIn Listing)';
-          }
-        }
-      } else if (lower.includes('greenhouse.io')) {
-        const ghMatch = jobUrl.match(/greenhouse\.io\/([^\/]+)\/jobs\/([^\/?#]+)/i);
-        if (ghMatch) {
-          extractedCompany = ghMatch[1].replace(/[-_]/g, ' ').toUpperCase();
-          extractedTitle = ghMatch[2].replace(/[-_]/g, ' ').replace(/-/g, ' ').toUpperCase();
-        }
-      } else if (lower.includes('lever.co')) {
-        const leverMatch = jobUrl.match(/lever\.co\/([^\/]+)\/([^\/?#]+)/i);
-        if (leverMatch) {
-          extractedCompany = leverMatch[1].replace(/[-_]/g, ' ').toUpperCase();
-          extractedTitle = leverMatch[2].replace(/[-_]/g, ' ').replace(/-/g, ' ').toUpperCase();
-        }
-      } else {
-        try {
-          const parsed = new URL(jobUrl);
-          const domain = parsed.hostname.replace('www.', '').split('.')[0];
-          extractedCompany = domain.charAt(0).toUpperCase() + domain.slice(1);
-          const pathSegments = parsed.pathname.split('/').filter(Boolean);
-          if (pathSegments.length > 0) {
-            const last = pathSegments[pathSegments.length - 1];
-            extractedTitle = last.replace(/[-_]/g, ' ').replace(/\d+/g, '').trim();
-            extractedTitle = extractedTitle.charAt(0).toUpperCase() + extractedTitle.slice(1);
-          }
-        } catch {
-          extractedCompany = 'Company Career Site';
-        }
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to fetch job description from URL.');
       }
 
-      // Match keywords to comprehensive templates
-      if (lower.includes('consult') || lower.includes('strategy') || lower.includes('mckinsey') || lower.includes('bcg') || lower.includes('bain') || extractedTitle.toLowerCase().includes('consultant')) {
-        roleId = 'consulting';
-        matchedJd = MBA_ROLES_CATALOG[1].text;
-        extractedTitle = 'Management Consultant / Strategy Associate';
-      } else if (lower.includes('brand') || lower.includes('marketing') || lower.includes('unilever') || lower.includes('fmcg') || lower.includes('p&g') || extractedTitle.toLowerCase().includes('brand')) {
-        roleId = 'brand';
-        matchedJd = MBA_ROLES_CATALOG[2].text;
-        extractedTitle = 'Brand / Marketing Manager';
-      } else if (lower.includes('invest') || lower.includes('finance') || lower.includes('bank') || lower.includes('m&a') || lower.includes('capital') || extractedTitle.toLowerCase().includes('analyst') || extractedTitle.toLowerCase().includes('associate')) {
-        roleId = 'ib_finance';
-        matchedJd = MBA_ROLES_CATALOG[3].text;
-        extractedTitle = 'Investment Banking & Corporate Finance Associate';
-      } else if (lower.includes('ops') || lower.includes('supply') || lower.includes('logistics') || lower.includes('fulfillment')) {
-        roleId = 'ops_supply';
-        matchedJd = MBA_ROLES_CATALOG[4].text;
-        extractedTitle = 'Operations & Supply Chain Program Lead';
-      } else if (lower.includes('sales') || lower.includes('bd') || lower.includes('account executive')) {
-        roleId = 'tech_sales';
-        matchedJd = MBA_ROLES_CATALOG[5].text;
-        extractedTitle = 'Enterprise Tech Sales & BD Director';
-      } else if (lower.includes('chief of staff') || lower.includes('bizops')) {
-        roleId = 'chief_of_staff';
-        matchedJd = MBA_ROLES_CATALOG[6].text;
-        extractedTitle = 'Chief of Staff / Strategy & BizOps';
-      } else {
-        roleId = 'pm';
-        matchedJd = `Role Title: ${extractedTitle}\nCompany: ${extractedCompany}\nSource: ${jobUrl}\n\n` + MBA_ROLES_CATALOG[0].text;
-      }
-
-      setSelectedRoleId(roleId);
-      setJdInputText(matchedJd);
+      setJdInputText(data.text);
       setFetchedJobMeta({
-        title: extractedTitle,
-        company: extractedCompany,
+        title: data.title || 'Imported Job Role',
+        company: data.company || 'Target Enterprise',
         source: jobUrl,
       });
-      setFetchStatus(`Successfully fetched JD: ${extractedTitle} (${extractedCompany}) ✓`);
-    }, 400);
+      setFetchStatus(`Successfully imported JD: ${data.title || 'Job Role'} ✓`);
+    } catch (err: any) {
+      setFetchStatus(`Import error: ${err.message || 'Could not fetch URL.'}`);
+    }
   };
 
   // Handle applying improved bullet to resume (Strict User Action Only)
