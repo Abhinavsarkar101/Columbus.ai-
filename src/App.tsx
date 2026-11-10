@@ -4,7 +4,9 @@ import { AuthProvider } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { MigrationModal } from './components/MigrationModal';
-import { SAMPLE_MBA_RESUME } from './lib/resume';
+import { DeleteAccountModal } from './components/DeleteAccountModal';
+import { SAMPLE_MBA_RESUME, EMPTY_RESUME_DATA } from './lib/resume';
+import { storageService } from './lib/storageService';
 import { Assess } from './pages/Assess';
 import { Company } from './pages/Company';
 import { Home } from './pages/Home';
@@ -29,8 +31,43 @@ function AppContent() {
 
   const [currentTab, setCurrentTab] = useState<string>(getRouteFromHash());
 
-  // In-memory candidate resume data (defaulted to standard MBA sample, editable in session)
+  // In-memory candidate resume data (persisted per user)
   const [resumeData, setResumeData] = useState<ResumeData>(SAMPLE_MBA_RESUME);
+
+  // Load user's saved resume when active user changes
+  useEffect(() => {
+    let isMounted = true;
+    async function loadResume() {
+      if (user) {
+        const saved = await storageService.getUserResume(user.uid);
+        if (saved && isMounted) {
+          setResumeData(saved);
+        } else if (isMounted) {
+          // New user sign up: clean empty resume
+          const cleanResume = {
+            ...EMPTY_RESUME_DATA,
+            fullName: user.displayName || user.email?.split('@')[0] || '',
+            email: user.email || '',
+          };
+          setResumeData(cleanResume);
+          await storageService.saveUserResume(user.uid, cleanResume);
+        }
+      } else {
+        setResumeData(SAMPLE_MBA_RESUME);
+      }
+    }
+    loadResume();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  const handleUpdateResume = (updated: ResumeData) => {
+    setResumeData(updated);
+    if (user) {
+      storageService.saveUserResume(user.uid, updated);
+    }
+  };
 
   // Listen to hash changes
   useEffect(() => {
@@ -83,7 +120,7 @@ function AppContent() {
         {currentTab === 'resume' && (
           <ResumePage
             resumeData={resumeData}
-            onUpdateResume={setResumeData}
+            onUpdateResume={handleUpdateResume}
             onNavigateTab={handleNavigate}
           />
         )}
@@ -91,7 +128,7 @@ function AppContent() {
         {currentTab === 'match' && (
           <Match
             resumeData={resumeData}
-            onUpdateResume={setResumeData}
+            onUpdateResume={handleUpdateResume}
             onNavigateTab={handleNavigate}
           />
         )}
@@ -124,6 +161,7 @@ function AppContent() {
 
       <AuthModal />
       <MigrationModal />
+      <DeleteAccountModal />
     </div>
   );
 }

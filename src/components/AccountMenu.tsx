@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, LogOut, ShieldCheck, Mail, ChevronDown, LayoutDashboard, Globe } from 'lucide-react';
+import { User, LogOut, ShieldCheck, Mail, ChevronDown, LayoutDashboard, Globe, Trash2 } from 'lucide-react';
 
 interface AccountMenuProps {
   onNavigateTab?: (tab: string) => void;
 }
 
 export const AccountMenu: React.FC<AccountMenuProps> = ({ onNavigateTab }) => {
-  const { user, isVerified, openAuthModal, logout } = useAuth();
+  const { user, isVerified, openAuthModal, logout, openDeleteModal } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   if (!user) {
@@ -85,16 +85,26 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({ onNavigateTab }) => {
             </div>
           )}
 
-          <div className="p-1">
+          <div className="p-1 space-y-0.5">
             <button
               onClick={() => {
                 setDropdownOpen(false);
                 logout();
               }}
-              className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+              className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-3.5 h-3.5 text-slate-400" />
               <span>Sign Out</span>
+            </button>
+            <button
+              onClick={() => {
+                setDropdownOpen(false);
+                openDeleteModal();
+              }}
+              className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center gap-2 cursor-pointer border-t border-slate-800/60 pt-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Account</span>
             </button>
           </div>
         </div>

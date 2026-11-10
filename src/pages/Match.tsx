@@ -35,6 +35,7 @@ import { analyzeJobDescription } from '../lib/jd';
 import { SAMPLE_MBA_RESUME, generateAtsPlainText } from '../lib/resume';
 import { extractResumeFileText, ExtractedResumeText } from '../lib/resumeExtraction';
 import { runJobMatchAnalysis } from '../lib/match-engine';
+import { storageService } from '../lib/storageService';
 import {
   ThreeBlockResultCard,
   EngineAnalysisResult,
@@ -529,6 +530,40 @@ export const Match: React.FC<MatchProps> = ({
       clearTimeout(timer);
     };
   }, [jdText, activeResumeInput, activeJobInfo.company]);
+
+  // Per-user Job Match data loader
+  useEffect(() => {
+    let isMounted = true;
+    async function loadUserJobMatch() {
+      if (user) {
+        const saved = await storageService.getUserJobMatch(user.uid);
+        if (saved && isMounted) {
+          if (saved.jdText !== undefined) setJdText(saved.jdText);
+          if (saved.activeJobInfo) setActiveJobInfo(saved.activeJobInfo);
+        } else if (isMounted) {
+          // Brand new user on sign up: reset Job Match inputs
+          setJdText('');
+          setActiveJobInfo({ title: '', company: '', source: '' });
+          setEngineResult(null);
+          setUploadedResume(null);
+        }
+      }
+    }
+    loadUserJobMatch();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  // Persist Job Match inputs per user
+  useEffect(() => {
+    if (user && jdText !== undefined) {
+      storageService.saveUserJobMatch(user.uid, {
+        jdText,
+        activeJobInfo,
+      });
+    }
+  }, [user, jdText, activeJobInfo]);
 
   // One-click Reset / Restart handler: clears JD text, URL, and resets active reference back to fresh empty state
   const handleResetAll = () => {

@@ -36,6 +36,7 @@ import {
   ScoreDResult,
 } from '../lib/engine';
 import { Track3View } from '../track3/Track3View';
+import { storageService } from '../lib/storageService';
 
 export type TrackType = 'A' | 'B' | 'C' | 'D';
 
@@ -302,17 +303,48 @@ export const Assess: React.FC = () => {
     D: { answers: {}, currentStepIndex: 0, stage: 'entry', step0Role: 'Product Manager', step1Level: 'FRESHER' },
   });
 
+  // Load user's saved assessment state
+  useEffect(() => {
+    let isMounted = true;
+    async function loadAssessment() {
+      if (user) {
+        const saved = await storageService.getUserAssessment(user.uid);
+        if (saved && isMounted) {
+          setTracksState(saved);
+        } else if (isMounted) {
+          // Brand new user: reset assessment
+          setTracksState({
+            A: { answers: {}, currentStepIndex: 0, stage: 'entry' },
+            B: { answers: {}, currentStepIndex: 0, stage: 'entry' },
+            C: { answers: {}, currentStepIndex: 0, stage: 'entry', step0Spec: 'FIN' },
+            D: { answers: {}, currentStepIndex: 0, stage: 'entry', step0Role: 'Product Manager', step1Level: 'FRESHER' },
+          });
+        }
+      }
+    }
+    loadAssessment();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
   const currentTrackState = tracksState[activeTrack];
 
-  // Helper to update current track state
+  // Helper to update current track state and persist
   const updateCurrentTrack = (patch: Partial<TrackState>) => {
-    setTracksState((prev) => ({
-      ...prev,
-      [activeTrack]: {
-        ...prev[activeTrack],
-        ...patch,
-      },
-    }));
+    setTracksState((prev) => {
+      const updated = {
+        ...prev,
+        [activeTrack]: {
+          ...prev[activeTrack],
+          ...patch,
+        },
+      };
+      if (user) {
+        storageService.saveUserAssessment(user.uid, updated);
+      }
+      return updated;
+    });
   };
 
   // Compile active question list for the current track
