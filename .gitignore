@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Firebase & Local Credentials (prevent GitHub exposure)
+firebase-applet-config.json
+firebase_applet_config.xml
+.env.local
+.env.*.local
