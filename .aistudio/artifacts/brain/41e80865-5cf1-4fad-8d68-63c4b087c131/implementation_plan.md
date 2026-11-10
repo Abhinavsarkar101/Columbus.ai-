@@ -1,34 +1,72 @@
-# Implementation Plan: Job URL Auto-Fetch, Removal of XYZ Framework, and One-Click Resume Bullet Replacements
+# Firebase Authentication & Firestore Persistence Integration
 
-## User Objectives & Requirements
-1. **Job Description Link Input & Auto-Fetch**:
-   - Remove the default sample JDs from the main view (or make them optional/hidden, replacing them with a dedicated **Job Link Input** where users paste a specific job URL from LinkedIn, Greenhouse, Lever, or company career sites).
-   - Automatically extract/parse the job title and company from the URL slug and populate the authentic corresponding job description.
-   - Retain the dual option: users can either paste the job URL (auto-fetched) OR paste raw text directly.
-2. **Remove XYZ Framework Reference**:
-   - Remove all mentions of "(XYZ Framework)" from the UI (e.g. in `src/pages/Match.tsx`). Rename section to "Targeted Bullet Point Rewrites".
-3. **One-Click Apply to Resume Button**:
-   - Add an explicit **"Apply to Resume"** / **"Replace in Resume"** button on each improved bullet point card.
-   - Strict requirement: It ONLY replaces the matching original bullet in the resume experience history *when the user explicitly clicks the button* (never automatically without user action).
-   - Once clicked, updates the resume state (`onUpdateResume`), shows a success confirmation toast/badge ("Applied to Resume Studio!"), allowing the user to view the updated bullet in Resume Studio and download it.
+Integrate Firebase Authentication (Email/Password with verification & Google Sign-In with account linking) and Firestore persistence into the application while preserving 100% of existing functionality and providing a seamless signed-out localStorage fallback.
 
-## Proposed Changes
+## User Review & Critical Decisions
 
-### 1. Update `src/pages/Match.tsx`
-- **Job URL Input Section**:
-  - Add a dedicated input field: "Paste Job URL (LinkedIn, Greenhouse, Lever, etc.)".
-  - Add a "Fetch Job Description" button (or auto-parse on input change/blur).
-  - Extract company and title from URL path (e.g., `linkedin.com/jobs/view/senior-product-manager-at-stripe-12345` -> Title: "Senior Product Manager", Company: "Stripe").
-  - Map recognized job slugs to authentic professional job descriptions or parse cleanly.
-- **Remove XYZ Framework**:
-  - Update section heading from `Targeted Bullet Point Rewrites (XYZ Framework)` to `Targeted Bullet Point Rewrites`.
-- **One-Click Apply Button**:
-  - Add `onApplyRewrite(original, improved)` handler.
-  - When user clicks "Apply to Resume" on a rewrite card:
-    - Iterate through `resumeData.experience`, find the experience item containing the original bullet (or matching keywords), and replace that exact bullet string with the improved bullet string.
-    - Call `onUpdateResume(updatedResume)`.
-    - Show an "Applied ✓" feedback state on the button.
+> [!IMPORTANT]
+> - **Zero Disruption**: Existing functionality, UI styling, and offline localStorage mode remain 100% intact and functional without any auth walls.
+> - **Email Abuse Guard**: Disposed domain blocklist bundled locally; verification email required for cloud sync (local storage remains active while unverified).
 
-### 2. Verification Plan
-- Compile applet with `compile_applet`.
-- Run TypeScript lint check with `lint_applet`.
+- **Confirmed Decision 1**: Signed-out users have full access to the app via localStorage, with a non-blocking prompt to sign in.
+- **Confirmed Decision 2**: Automatic migration prompt on first sign-in to sync existing local data to Firestore.
+
+---
+
+## 1. Overview & Core Concept
+
+- **What It Does**: Adds robust user authentication and cloud synchronization while keeping offline local storage fully operational.
+- **Key Capabilities**:
+  - Email/Password sign-up, sign-in, and password reset.
+  - Google Sign-In with automatic account linking for duplicate emails.
+  - Disposable email blocklist check on sign-up (allowing `.edu`, `.ac.in`, corporate domains, and gmail).
+  - Email verification requirement for cloud synchronization with a 60s rate-limited resend banner.
+  - Storage abstraction layer supporting seamless fallback between localStorage and Firestore.
+
+---
+
+## 2. User Experience & Visual Design
+
+- **Authentication UI**: Modal / Dialog based sign-in, sign-up, and forgot password screens styled consistently with the application's dark theme (`#070B14`, `#0E1526`, `#00DF89` emerald accents).
+- **Account Menu**: Compact header avatar / badge showing signed-in status, verification badge, and Sign Out action.
+- **Sync Status & Banner**: Non-blocking banner for unverified users ("Verify your email to save your work across devices") with a Resend button.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Storage Abstraction Layer**
+  - *Chosen Approach*: Single `storageService` interface with `localStorage` and `firestore` backends.
+  - *Why*: Keeps application code decoupled from Firebase specifics and ensures seamless offline fallback.
+- **Decision 2: Non-blocking Auth**
+  - *Chosen Approach*: Users can use the entire app without signing in. Auth is purely additive for multi-device sync.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   Application UI                       │
+└──────────────────────────┬─────────────────────────────┘
+                           │ calls storageService
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│              Storage Abstraction Layer                 │
+│         (Detects Auth State & Email Verification)      │
+└───────────┬────────────────────────────────┬───────────┘
+            │                                │
+            ▼ (Signed out / Unverified)      ▼ (Signed in & Verified)
+┌───────────────────────┐        ┌───────────────────────────────┐
+│     localStorage      │        │           Firestore           │
+│  (100% Offline Mode)  │        │  (users/{uid}/collections)    │
+└───────────────────────┘        └───────────────────────────────┘
+```
+
+- **Data Models**:
+  - `users/{uid}/resumes/{id}`
+  - `users/{uid}/jobs/{id}`
+  - `users/{uid}/assessments/{id}`
+  - `users/{uid}/reports/{id}`
+  - `users/{uid}/preferences/main`
+- **Security Rules**: Enforce `request.auth != null && request.auth.uid == userId` for all paths.

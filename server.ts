@@ -1,9 +1,26 @@
+import 'dotenv/config';
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Server-side Gemini client with platform-managed key and telemetry user-agent
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
 
 // SSRF & URL validation helper
 function isValidHttpUrl(urlString: string): boolean {
@@ -34,6 +51,11 @@ function isValidHttpUrl(urlString: string): boolean {
       hostname.startsWith('172.29.') ||
       hostname.startsWith('172.30.') ||
       hostname.startsWith('172.31.') ||
+      hostname.startsWith('169.254.') ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      hostname.startsWith('fe80:') ||
+      hostname.startsWith('fd00:') ||
       hostname.endsWith('.local') ||
       hostname.endsWith('.internal')
     ) {
@@ -72,31 +94,138 @@ function decodeHtmlEntities(str: string): string {
 }
 
 // Clean HTML to text preserving bullet structure and newlines
+// Phase B: Sanitize JD Text
+function sanitizeJdText(text: string, mode: 'import' | 'paste' = 'import'): string {
+  if (!text) return '';
+  const rawLines = text.split(/\r?\n/).map((l) => l.trim());
+
+  if (mode === 'paste') {
+    const collapsed: string[] = [];
+    let consecutiveBlanks = 0;
+    for (const line of rawLines) {
+      if (line.length === 0) {
+        consecutiveBlanks++;
+        if (consecutiveBlanks <= 1) collapsed.push('');
+      } else {
+        consecutiveBlanks = 0;
+        collapsed.push(line);
+      }
+    }
+    return collapsed.join('\n').trim();
+  }
+
+  const cleanedLines: string[] = [];
+  let prevCleanLower = '';
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const rawLine = rawLines[i];
+    if (!/[a-zA-Z0-9]/.test(rawLine)) {
+      continue;
+    }
+
+    let line = rawLine;
+    const isBullet = /^[•●▪▫◦‣⁃➢✓✔\-\*]\s*/.test(line);
+    if (isBullet) {
+      const bulletContent = line.replace(/^[•●▪▫◦‣⁃➢✓✔\-\*]\s*/, '').trim();
+      if (!/[a-zA-Z0-9]/.test(bulletContent)) {
+        continue;
+      }
+      line = `• ${bulletContent}`;
+    }
+
+    const lineLower = line.toLowerCase();
+    if (lineLower === prevCleanLower && line.length > 8) {
+      continue;
+    }
+
+    cleanedLines.push(line);
+    prevCleanLower = lineLower;
+  }
+
+  const finalLines: string[] = [];
+  let blankCount = 0;
+  for (const line of cleanedLines) {
+    if (line.length === 0) {
+      blankCount++;
+      if (blankCount <= 1 && finalLines.length > 0) finalLines.push('');
+    } else {
+      blankCount = 0;
+      finalLines.push(line);
+    }
+  }
+
+  return finalLines.join('\n').trim();
+}
+
+function verifyJdInvariants(text: string): { isValid: boolean; violations: string[] } {
+  const violations: string[] = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+
+  if (lines.length > 0) {
+    const firstNonEmpty = lines.find((l) => l.length > 0);
+    if (!firstNonEmpty || !/[a-zA-Z0-9]/.test(firstNonEmpty)) {
+      violations.push('leading_marker_or_letterless_block');
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.length > 0) {
+      if (/^[•●▪▫◦‣⁃➢✓✔\-\*]+$/.test(line)) {
+        violations.push(`orphan_marker_at_line_${i + 1}`);
+      } else if (!/[a-zA-Z0-9]/.test(line)) {
+        violations.push(`letterless_line_at_line_${i + 1}`);
+      }
+    }
+  }
+
+  return { isValid: violations.length === 0, violations };
+}
+
+// Clean HTML to text preserving bullet structure and newlines (Phase B)
 function htmlToCleanText(html: string): string {
   if (!html) return '';
 
   let text = html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, ' ')
+    .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, ' ')
+    .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+    .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, ' ')
+    .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+    .replace(/<aside\b[^<]*(?:(?!<\/aside>)<[^<]*)*<\/aside>/gi, ' ')
+    .replace(/<button\b[^<]*(?:(?!<\/button>)<[^<]*)*<\/button>/gi, ' ')
+    .replace(/<input\b[^<]*>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<\/div>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '\n• ')
-    .replace(/<\/li>/gi, '')
     .replace(/<h[1-6][^>]*>/gi, '\n\n')
     .replace(/<\/h[1-6]>/gi, '\n');
+
+  // Parse <li> tags: emit text ONLY if non-empty and containing letters/digits
+  text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, liContent) => {
+    const rawClean = decodeHtmlEntities(liContent.replace(/<[^>]+>/g, ' ')).trim();
+    const strippedGlyphs = rawClean.replace(/^[•●▪▫◦‣⁃➢✓✔\-\*]\s*/, '').trim();
+    if (/[a-zA-Z0-9]/.test(strippedGlyphs)) {
+      return `\n• ${strippedGlyphs}\n`;
+    }
+    return ' ';
+  });
 
   // Strip remaining HTML tags
   text = text.replace(/<[^>]+>/g, ' ');
   text = decodeHtmlEntities(text);
 
-  // Normalize lines and whitespace
-  const lines = text
-    .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-    .filter((line, i, arr) => line.length > 0 || (i > 0 && arr[i - 1].length > 0));
+  let sanitized = sanitizeJdText(text, 'import');
+  const check = verifyJdInvariants(sanitized);
+  if (!check.isValid) {
+    console.warn('[server fetch-jd invariant violation]:', check.violations);
+    sanitized = sanitizeJdText(sanitized, 'import');
+  }
 
-  return lines.join('\n').trim();
+  return sanitized;
 }
 
 // Clean title of website branding suffixes
@@ -269,7 +398,12 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
-  const PORT = process.env.PORT || 3000;
+  let PORT = Number(process.env.PORT) || 3000;
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(parsed)) PORT = parsed;
+  }
   const isProduction = process.env.NODE_ENV === 'production';
 
   // API endpoint for fetching and parsing Job Description from URL
@@ -282,15 +416,31 @@ async function startServer() {
 
     const trimmedUrl = targetUrl.trim();
 
+    // SSRF & protocol validation
     if (!isValidHttpUrl(trimmedUrl)) {
       return res.status(400).json({
         success: false,
+        errorType: 'ssrf_blocked',
         error: 'Invalid URL format or restricted destination address. Please provide a public http/https job link.',
       });
     }
 
+    // Explicit rejection for login-walled domains if hit directly
+    const urlHostname = new URL(trimmedUrl).hostname.toLowerCase();
+    if (
+      urlHostname.includes('linkedin.com') ||
+      urlHostname.includes('indeed.com') ||
+      urlHostname.includes('glassdoor.com') ||
+      urlHostname.includes('naukri.com')
+    ) {
+      return res.status(403).json({
+        success: false,
+        errorType: 'login_walled',
+        error: 'This job site requires account login and restricts automated access.',
+      });
+    }
+
     try {
-      let fetchUrl = trimmedUrl;
       const requestHeaders: Record<string, string> = {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -299,55 +449,53 @@ async function startServer() {
         'Cache-Control': 'no-cache',
       };
 
-      // Special handling for LinkedIn job URLs to use guest jobPosting API
-      // Matches both /jobs/view/12345678 and ?currentJobId=12345678
-      if (trimmedUrl.includes('linkedin.com')) {
-        const jobIdMatch =
-          trimmedUrl.match(/\/jobs\/view\/([0-9]+)/i) ||
-          trimmedUrl.match(/currentJobId=([0-9]+)/i) ||
-          trimmedUrl.match(/([0-9]{8,11})/);
-
-        if (jobIdMatch && jobIdMatch[1]) {
-          const jobId = jobIdMatch[1];
-          fetchUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobId}`;
-        }
-      }
-
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 9500); // 9.5s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
       let response: Response;
       try {
-        response = await fetch(fetchUrl, {
+        response = await fetch(trimmedUrl, {
           signal: controller.signal,
           headers: requestHeaders,
+          redirect: 'follow',
         });
-      } catch (err: any) {
-        // If LinkedIn guest endpoint failed, try direct URL
-        if (fetchUrl !== trimmedUrl) {
-          response = await fetch(trimmedUrl, {
-            signal: controller.signal,
-            headers: requestHeaders,
-          });
-        } else {
-          throw err;
-        }
       } finally {
         clearTimeout(timeoutId);
+      }
+
+      if (response.status === 404) {
+        return res.status(404).json({
+          success: false,
+          errorType: 'not_found',
+          error: 'Job posting not found (HTTP 404). The listing may have expired, been taken down, or the URL might be incomplete.',
+        });
       }
 
       if (!response.ok) {
         return res.status(502).json({
           success: false,
-          error: `Job website returned HTTP ${response.status} (${response.statusText}). The destination page may require user login or block automated requests. You can also paste the text directly into the Job Description box below.`,
+          errorType: 'http_error',
+          statusCode: response.status,
+          error: `Website returned HTTP ${response.status} (${response.statusText}). The destination page may require user login or block automated requests.`,
         });
       }
 
-      const html = await response.text();
+      // Check Content-Length if provided to prevent >2MB downloads
+      const contentLength = response.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > 2 * 1024 * 1024) {
+        return res.status(413).json({
+          success: false,
+          errorType: 'payload_too_large',
+          error: 'The target page is larger than the 2MB response cap.',
+        });
+      }
+
+      const html = (await response.text()).slice(0, 2 * 1024 * 1024); // Cap at 2MB
       if (!html || html.length < 50) {
         return res.status(422).json({
           success: false,
-          error: 'Retrieved empty content from this job link. Please verify the URL or paste the job description text manually.',
+          errorType: 'unreadable',
+          error: 'Retrieved empty or insufficient content from this job link. Please verify the URL or paste the job description text manually.',
         });
       }
 
@@ -356,8 +504,9 @@ async function startServer() {
       if (!parsed.text || parsed.text.length < 50) {
         return res.status(422).json({
           success: false,
+          errorType: 'unreadable',
           error:
-            'Could not extract sufficient job description text from this link (the page content may be rendered dynamically via client-side JavaScript or require login). You can paste the job text directly into the text area below.',
+            'Could not extract sufficient job description text from this link (the page content may be rendered dynamically via client-side JavaScript or require login).',
         });
       }
 
@@ -373,13 +522,91 @@ async function startServer() {
       if (err.name === 'AbortError') {
         return res.status(504).json({
           success: false,
-          error: 'Request timed out while connecting to the job posting URL (9.5s limit). You can paste the job description manually.',
+          errorType: 'timeout',
+          error: 'Request timed out while connecting to the job posting URL (10s limit).',
         });
       }
       return res.status(500).json({
         success: false,
-        error: `Could not reach target URL: ${err.message || 'Network error'}. You can paste the job description directly below.`,
+        errorType: 'network_error',
+        error: `Could not reach target URL: ${err.message || 'Network error'}.`,
       });
+    }
+  });
+
+  // 3. General Gemini Content Generation
+  app.post('/api/gemini/generate', async (req, res) => {
+    try {
+      const { model = 'gemini-3.8-flash', prompt, contents, config } = req.body || {};
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ success: false, error: 'GEMINI_API_KEY not configured on server.' });
+      }
+
+      const inputContents = contents || prompt;
+      if (!inputContents) {
+        return res.status(400).json({ success: false, error: 'Prompt or contents required.' });
+      }
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: inputContents,
+        config,
+      });
+
+      return res.json({ success: true, text: response.text });
+    } catch (err: any) {
+      console.error('[server /api/gemini/generate error]:', err?.message || err);
+      return res.status(err?.status || 500).json({
+        success: false,
+        error: err?.message || 'Failed to generate content',
+      });
+    }
+  });
+
+  // 4. General Gemini Content Streaming (SSE)
+  app.post('/api/gemini/stream', async (req, res) => {
+    try {
+      const { model = 'gemini-3.8-flash', prompt, contents, config } = req.body || {};
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ success: false, error: 'GEMINI_API_KEY not configured on server.' });
+      }
+
+      const inputContents = contents || prompt;
+      if (!inputContents) {
+        return res.status(400).json({ success: false, error: 'Prompt or contents required.' });
+      }
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: inputContents,
+        config,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.text) {
+          res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+        }
+      }
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } catch (err: any) {
+      console.error('[server /api/gemini/stream error]:', err?.message || err);
+      if (!res.headersSent) {
+        return res.status(err?.status || 500).json({
+          success: false,
+          error: err?.message || 'Failed to stream content',
+        });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: err?.message || 'Stream error' })}\n\n`);
+        return res.end();
+      }
     }
   });
 
@@ -397,7 +624,76 @@ async function startServer() {
     });
   }
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
+  const server = http.createServer(app);
+
+  // 5. Real-time Live API WebSocket bridge on /api/gemini/live
+  try {
+    // @ts-ignore
+    const { WebSocketServer } = await import('ws');
+    const wss = new WebSocketServer({ server, path: '/api/gemini/live' });
+
+    wss.on('connection', async (clientWs: any) => {
+      const ai = getGeminiClient();
+      if (!ai) {
+        clientWs.send(JSON.stringify({ error: 'GEMINI_API_KEY not configured on server' }));
+        clientWs.close();
+        return;
+      }
+
+      try {
+        const session = await ai.live.connect({
+          model: 'gemini-3.8-live',
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+            },
+            systemInstruction: 'You are a helpful career assistant.',
+          },
+          callbacks: {
+            onmessage: (message: LiveServerMessage) => {
+              for (const part of message.serverContent?.modelTurn?.parts ?? []) {
+                if (part.inlineData?.data) {
+                  clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
+                }
+              }
+              if (message.serverContent?.interrupted) {
+                clientWs.send(JSON.stringify({ interrupted: true }));
+              }
+            },
+          },
+        });
+
+        clientWs.on('message', (data: any) => {
+          try {
+            const parsed = JSON.parse(data.toString());
+            if (parsed.audio) {
+              session.sendRealtimeInput({
+                audio: { data: parsed.audio, mimeType: 'audio/pcm;rate=16000' },
+              });
+            }
+          } catch {
+            // ignore
+          }
+        });
+
+        clientWs.on('close', () => {
+          try {
+            session.close();
+          } catch {
+            // ignore
+          }
+        });
+      } catch (err: any) {
+        clientWs.send(JSON.stringify({ error: err?.message || 'Failed to connect Live session' }));
+        clientWs.close();
+      }
+    });
+  } catch (err: any) {
+    console.warn('[server ws setup notice]: ws module bridge not initialized:', err?.message || err);
+  }
+
+  server.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

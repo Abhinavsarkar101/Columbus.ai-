@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to update Job Description Matcher with job URL link fetching and pasting, remove XYZ Framework mention, and add one-click Apply-to-Resume buttons on improved bullet points with strict user consent.",
-  "updatedAt":  "2026-10-22T05:14:24.965270719Z",
+  "summary":  "Implementation plan for adding Firebase Auth and Firestore persistence with email/password, Google sign-in, disposable domain blocklist, verification guard, and storage abstraction.",
+  "updatedAt":  "2026-11-10T09:12:34.110286040Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

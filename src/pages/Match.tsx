@@ -1,194 +1,267 @@
-import React, { useState, useMemo } from 'react';
-import { ResumeUploadModal } from '../components/ResumeUploadModal';
-import { analyzeJobDescription } from '../lib/jd';
-import { SAMPLE_MBA_RESUME } from '../lib/resume';
+import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import {
-  GapClassification,
-  RequirementGap,
-  ResumeData,
-} from '../types';
+  FileUp,
+  Upload,
+  Check,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  FileText,
+  Sparkles,
+  X,
+  RotateCcw,
+  ExternalLink,
+  History,
+  Trash2,
+  AlertCircle,
+  Edit3,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Zap,
+  Activity,
+  Cpu,
+  Eye,
+  HelpCircle,
+  ArrowRight,
+  Info,
+  Download,
+  FileDown,
+} from 'lucide-react';
+import { ResumeData, JDAnalysis, RequirementGap } from '../types';
+import { analyzeJobDescription } from '../lib/jd';
+import { SAMPLE_MBA_RESUME, generateAtsPlainText } from '../lib/resume';
+import { extractResumeFileText, ExtractedResumeText } from '../lib/resumeExtraction';
+import { runJobMatchAnalysis } from '../lib/match-engine';
+import {
+  ThreeBlockResultCard,
+  EngineAnalysisResult,
+  ResumeEvidenceUnit,
+  MatchClassification,
+  RequirementPriority,
+  ExtractedRequirement,
+} from '../lib/match-engine-types';
+import { JobMatchDownloadModal } from '../components/JobMatchDownloadModal';
+import { AtsEngineResultsView } from '../components/AtsEngineResultsView';
+import {
+  JobMatchReportExportData,
+  downloadJobMatchPdf,
+  getReportFilename,
+} from '../lib/matchReportExport';
 
 interface MatchProps {
   resumeData: ResumeData;
-  onUpdateResume?: (data: ResumeData) => void;
+  onUpdateResume: (data: ResumeData) => void;
   onNavigateTab: (tab: string) => void;
+  onOpenUploadModal?: () => void;
 }
 
-export interface ViewedJob {
-  id: string;
-  jobTitle: string;
-  companyName: string;
-  jobDescription: string;
-  sourceUrl: string;
-  importedAt: number;
-}
+export type ResumeSourceMode = 'upload' | 'compass';
 
-export interface MbaRolePreset {
+export interface PreviouslyViewedJob {
   id: string;
   title: string;
   company: string;
-  category: string;
   text: string;
+  sourceUrl: string;
+  sourceType: 'greenhouse' | 'lever' | 'public_web' | 'manual' | 'preset';
+  timestamp: number;
+  charCount: number;
 }
 
-export const MBA_ROLES_CATALOG: MbaRolePreset[] = [
+interface ImportFailureModalState {
+  isOpen: boolean;
+  title: string;
+  reason: string;
+  attemptedUrl: string;
+}
+
+const SAMPLE_JDS = [
   {
-    id: 'pm',
-    title: 'Senior Product Manager',
-    company: 'Stripe / Tier-1 FinTech',
-    category: 'Product & Tech',
-    text: `About the Role:
-We are looking for an experienced Senior Product Manager to lead our Core Monetization and Billing Platform. You will define the multi-year product roadmap, drive A/B testing experimentation, and optimize pricing packaging models across enterprise merchants.
+    title: 'Senior Product Manager — Digital Platforms',
+    company: 'Swiggy',
+    source: 'https://www.linkedin.com/jobs/view/swiggy-sr-pm-digital',
+    text: `Role: Senior Product Manager — Digital Platforms & Core Monetization
+Company: Swiggy
+Location: Bengaluru / Remote
+
+About the Role:
+We are looking for an exceptional post-MBA Product Manager to lead our Core Monetization and Workflow platform. You will define the multi-year product roadmap, drive conversion rate optimization, and run structured A/B testing sprints with cross-functional engineering teams.
 
 Key Responsibilities:
-- Lead sprint planning and agile scrum delivery with dedicated engineering and design pods.
-- Define customer churn mitigation strategies and analyze cohort retention curves.
-- Author comprehensive PRD specifications for multi-currency automated checkout workflows.
-- Partner with finance and sales to evaluate customer acquisition cost (CAC) and customer lifetime value (CLTV).
-
-Requirements & Qualifications:
-- MBA from a top-tier business school or equivalent practical experience.
-- 3+ years of product management experience managing technical SaaS or payments platforms.
-- Deep hands-on proficiency in SQL, user research, wireframing in Figma, and data analytics.
-- Proven track record leading cross-functional teams and executive presentations to C-suite leaders.
-- Strong grounding in unit economics, go-to-market (GTM) launches, and contract negotiation.`,
-  },
-  {
-    id: 'consulting',
-    title: 'Management Consultant / Strategy Associate',
-    company: 'McKinsey / BCG / Bain',
-    category: 'Strategy & Consulting',
-    text: `Position Overview:
-Join our Strategy & Corporate Finance practice to advise C-suite executives on critical business transformations, market entry sizing, and commercial due diligence.
-
-Responsibilities:
-- Structure ambiguous business dilemmas into MECE hypothesis trees and issue hierarchies.
-- Conduct commercial due diligence on acquisition targets for top-tier private equity sponsors.
-- Synthesize quantitative data into compelling executive presentation decks for client partners.
-- Build granular financial valuation models (DCF, LBO, EBITDA multiple expansion).
-
-Requirements:
-- Master of Business Administration (MBA) with strong academic distinction.
-- Fluency in financial modeling, valuation multiples, DCF, and EBITDA margin expansion.
-- Demonstrated competitive benchmarking, market sizing (TAM SAM SOM), and cost reduction frameworks.
-- Exceptional stakeholder management, change management, and verbal executive communication.`,
-  },
-  {
-    id: 'brand',
-    title: 'Brand / Marketing Manager',
-    company: 'Hindustan Unilever / P&G (FMCG)',
-    category: 'Marketing',
-    text: `Job Description:
-Own the brand equity, advertising campaigns, and P&L growth for our leading personal care brand across General Trade and E-commerce channels.
-
-Key Deliverables:
-- Formulate annual brand positioning and integrated marketing communication (IMC) campaigns.
-- Direct creative agency partners on packaging redesign and OOH / digital media plans.
-- Track Nielsen market share, consumer segmentation, and category gross margin profitability.
-- Oversee trade marketing, promotional spend ROI, and distributor network alignment.
-
-Qualifications & Requirements:
-- MBA in Marketing or General Management.
-- Experience managing return on ad spend (ROAS), customer segmentation, and trade promotions.
-- Strong analytical skills in cohort analysis, pricing elasticity, and go-to-market (GTM) strategy.
-- Proven leadership across cross-functional supply chain, vendor negotiation, and sales teams.`,
-  },
-  {
-    id: 'ib_finance',
-    title: 'Investment Banking & Corporate Finance Associate',
-    company: 'Morgan Stanley / Goldman Sachs',
-    category: 'Finance',
-    text: `Role Summary:
-Seeking an ambitious post-MBA Associate to join our Mergers & Acquisitions (M&A) and Capital Markets team advising high-growth corporate clients on multi-million dollar transactions.
-
-Key Responsibilities:
-- Build dynamic financial projection models, discounted cash flow (DCF), merger consequences, and debt capacity analyses.
-- Author Confidential Information Memorandums (CIM) and pitch presentations for sponsor and strategic buy-side mandates.
-- Coordinate due diligence workstreams across accounting, legal, and operational advisory teams.
+• Author clear and comprehensive PRD specifications for billing, subscription, and onboarding workflows.
+• Run bi-weekly agile scrum sprint ceremonies, backlog grooming, and prioritize features based on user research.
+• Analyze customer churn metrics, unit economics (LTV/CAC), and establish clear KPIs for business stakeholders.
+• Conduct qualitative user discovery interviews and translate findings into high-fidelity wireframing specs in Figma.
+• Partner with sales and corporate finance teams on pricing elasticity and annual operating plan budgeting.
 
 Qualifications:
-- MBA in Finance, Economics, or Accounting from a premier business school.
-- Advanced modeling in Excel, pitch book design, and Bloomberg/Capital IQ proficiency.
-- Rigorous grasp of corporate finance unit economics, capital structure, and liquidity metrics.`,
+• MBA from a top-tier business school or equivalent quantitative analytical background.
+• 3+ years experience in technical product management or cross-functional strategy consulting.
+• Proven track record shipping scalable software products with measurable revenue impact.`,
   },
   {
-    id: 'ops_supply',
-    title: 'Operations & Supply Chain Program Lead',
-    company: 'Amazon / Global Logistics',
-    category: 'Operations',
-    text: `Position Overview:
-Drive end-to-end fulfillment network optimization, inventory turns, and warehouse automation across regional fulfillment hubs.
+    title: 'Management Consultant — Strategy & Digital',
+    company: 'McKinsey & Company',
+    source: 'https://www.linkedin.com/jobs/view/mckinsey-associate-consultant',
+    text: `Role: Management Consultant / Associate
+Company: McKinsey & Company
+Location: Mumbai / Gurugram
+
+About the Role:
+Join our Strategy & Digital Transformation practice to counsel Fortune 500 C-suite executives on strategic capital allocation, operating model redesign, and market entry strategies.
 
 Key Responsibilities:
-- Optimize last-mile delivery route algorithms, slashing cost-per-package and vehicle transit delays.
-- Lead Kaizen and Six Sigma lean operational audits across 8 automated sortation distribution centers.
-- Spearhead strategic vendor supplier negotiations, mitigating lead time volatility and stockouts.
+• Conduct rigorous financial modeling, DCF valuation, and EBITDA expansion benchmarking across client business units.
+• Synthesize complex quantitative market research and present structured executive decks to executive steering committees.
+• Drive cost optimization and working capital reduction across global supply chain networks.
+• Perform competitor benchmarking and formulate growth strategies for high-growth digital ventures.
 
-Requirements:
-- MBA in Operations, Supply Chain Management, or Industrial Systems.
-- Proven background in inventory forecasting, ERP/WMS systems, and logistics optimization.
-- Strong cross-functional leadership driving labor efficiency and safety compliance standards.`,
+Qualifications:
+• Top-tier MBA degree with strong academic record and proven problem-solving mindset.
+• Track record of structured quantitative analysis, team leadership, and executive communication.`,
   },
   {
-    id: 'tech_sales',
-    title: 'Enterprise Tech Sales & BD Director',
-    company: 'Salesforce / Microsoft Cloud',
-    category: 'Sales & Growth',
-    text: `Role Overview:
-Lead strategic enterprise commercial client acquisitions, pipeline generation, and annual contract value (ACV) quota achievement across Fortune 500 accounts.
+    title: 'Brand Manager — FMCG & Category Growth',
+    company: 'Hindustan Unilever (HUL)',
+    source: 'https://www.linkedin.com/jobs/view/hul-brand-manager-growth',
+    text: `Role: Brand Manager — Beauty & Personal Care
+Company: Hindustan Unilever (HUL)
+Location: Mumbai
+
+About the Role:
+Lead go-to-market execution, media planning, consumer insights, and P&L growth for a flagship FMCG brand portfolio generating ₹500+ Cr annually.
 
 Key Responsibilities:
-- Execute consultative solution sales cycles with CIOs, CTOs, and VP of Engineering buyers.
-- Architect custom commercial pricing structures, Master Service Agreements (MSA), and Statements of Work (SOW).
-- Partner with solutions architects and customer success leads to secure 125% Net Retention Rate (NRR).
+• Own end-to-end P&L management, pricing strategy, and gross margin optimization for retail and e-commerce channels.
+• Conceptualize and deploy integrated marketing communications (IMC) across digital, television, and performance channels.
+• Analyze consumer panel data (Nielsen/Kantar) to identify category growth drivers and market share opportunities.
+• Collaborate with trade marketing, sales, and supply chain teams to drive quick-commerce velocity and trial conversion.
 
-Requirements:
-- MBA graduate with proven enterprise software sales, business development, or consulting acumen.
-- Demonstrated quota overachievement ($2M+ ARR quota target).
-- Deep expertise in pipeline velocity, CRM management, and executive contract negotiations.`,
-  },
-  {
-    id: 'chief_of_staff',
-    title: 'Chief of Staff / Strategy & BizOps',
-    company: 'High-Growth Tech Unicorn',
-    category: 'General Management',
-    text: `About the Role:
-Act as the right-hand strategic partner to the CEO and Executive Leadership Team, translating overarching board objectives into tactical company-wide execution.
-
-Key Responsibilities:
-- Orchestrate quarterly OKR setting, executive staff meetings, and board presentation decks.
-- Spearhead special strategic incubation projects, international expansion feasibility, and strategic partnerships.
-- Monitor company health metrics, operational headcount modeling, and burn rate runway.
-
-Requirements:
-- MBA from a top-tier business school.
-- Background in management consulting, investment banking, or high-growth venture operations.
-- Exceptional executive presence, intellectual agility, and cross-functional diplomatic leadership.`,
+Qualifications:
+• MBA in Marketing/Strategy from a premier institute.
+• 2–4 years experience in FMCG brand management, trade marketing, or consumer growth.`,
   },
 ];
 
-const INITIAL_PRESET_JOBS: ViewedJob[] = MBA_ROLES_CATALOG.slice(0, 4).map((role) => ({
-  id: `preset-${role.id}`,
-  jobTitle: role.title,
-  companyName: role.company,
-  jobDescription: role.text,
-  sourceUrl: 'Curated MBA Role',
-  importedAt: Date.now() - 3600000,
-}));
-
-function isHttpUrl(urlString: string): boolean {
-  if (!urlString || typeof urlString !== 'string') return false;
-  return urlString.startsWith('http://') || urlString.startsWith('https://');
+// Normalizes and cleans JD text
+function cleanJdText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-function formatShortUrl(rawUrl: string): string {
+// Phase B Browser HTML-to-clean-text extraction using safe DOMParser (content-based, zero site-specific conditionals)
+function cleanHtmlToPlainText(html: string): string {
+  if (!html) return '';
   try {
-    const parsed = new URL(rawUrl);
-    const pathPart = parsed.pathname.length > 22 ? parsed.pathname.slice(0, 20) + '…' : parsed.pathname;
-    return `${parsed.hostname}${pathPart !== '/' ? pathPart : ''}`;
-  } catch {
-    return rawUrl.length > 35 ? rawUrl.slice(0, 32) + '…' : rawUrl;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // 1. Prefer JSON-LD JobPosting description when present
+    const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+    for (const scriptEl of Array.from(jsonLdScripts)) {
+      try {
+        const rawJson = scriptEl.textContent || '';
+        const parsed = JSON.parse(rawJson);
+        const candidates = Array.isArray(parsed) ? parsed : [parsed];
+        for (const item of candidates) {
+          if (item && (item['@type'] === 'JobPosting' || item['@type'] === 'jobPosting') && item.description) {
+            const desc = item.description;
+            if (typeof desc === 'string' && desc.trim().length > 50) {
+              if (desc.includes('<')) {
+                return cleanHtmlToPlainText(desc);
+              }
+              return cleanJdText(desc);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Remove noise elements: script/style/svg/img/iframe/nav/header/footer/aside/button/input and hidden elements
+    doc
+      .querySelectorAll(
+        'script, style, noscript, svg, img, iframe, nav, header, footer, aside, button, input, [hidden], [aria-hidden="true"]'
+      )
+      .forEach((el) => el.remove());
+
+    // Replace line break elements with newlines
+    doc.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+
+    // Non-empty <li> -> "• " + text (strip pre-existing leading glyphs)
+    doc.querySelectorAll('li').forEach((li) => {
+      const rawText = (li.textContent || '').trim();
+      const stripped = rawText.replace(/^[•●▪▫◦‣⁃➢✓✔\-\*]\s*/, '').trim();
+      if (/[a-zA-Z0-9]/.test(stripped)) {
+        li.textContent = `• ${stripped}`;
+        li.append('\n');
+      } else {
+        li.remove();
+      }
+    });
+
+    // Headings / paragraphs on own lines
+    doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, section, article').forEach((block) => {
+      block.append('\n\n');
+    });
+
+    // Emit text ONLY from remaining content
+    const text = doc.body.textContent || '';
+    return cleanJdText(text);
+  } catch (err) {
+    console.warn('[cleanHtmlToPlainText fallback]:', err);
+    return cleanJdText(html.replace(/<[^>]+>/g, ' '));
   }
+}
+
+// Detect login-walled / anti-bot platforms that forbid automated link access
+function getLoginWalledSiteName(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes('linkedin.com')) return 'LinkedIn';
+    if (host.includes('indeed.com')) return 'Indeed';
+    if (host.includes('glassdoor.com')) return 'Glassdoor';
+    if (host.includes('naukri.com')) return 'Naukri';
+  } catch {}
+  return null;
+}
+
+// Detect and parse Greenhouse URLs
+function parseGreenhouseUrl(urlString: string): { boardToken: string; jobId: string } | null {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.hostname.includes('greenhouse.io')) {
+      const match =
+        parsed.pathname.match(/\/(?:jobs\/)?([^/?#]+)\/jobs\/(\d+)/i) ||
+        parsed.pathname.match(/^\/([^/?#]+)\/jobs\/(\d+)/i);
+      if (match && match[1] && match[2]) {
+        return { boardToken: match[1], jobId: match[2] };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+// Detect and parse Lever URLs
+function parseLeverUrl(urlString: string): { companySlug: string; jobId: string } | null {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.hostname.includes('lever.co')) {
+      const match = parsed.pathname.match(/^\/([^/?#]+)\/([a-zA-Z0-9_-]+)/i);
+      if (match && match[1] && match[2]) {
+        return { companySlug: match[1], jobId: match[2] };
+      }
+    }
+  } catch {}
+  return null;
 }
 
 export const Match: React.FC<MatchProps> = ({
@@ -196,1100 +269,1685 @@ export const Match: React.FC<MatchProps> = ({
   onUpdateResume,
   onNavigateTab,
 }) => {
-  const [jobUrl, setJobUrl] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const [fetchStatus, setFetchStatus] = useState<{
-    type: 'idle' | 'loading' | 'success' | 'error';
-    message: string;
-  } | null>(null);
+  const { user } = useAuth();
+  // Check if current user Compass resume has content
+  const hasCompassContent = Boolean(
+    (resumeData.fullName && resumeData.fullName.trim()) ||
+    (resumeData.experience && resumeData.experience.length > 0) ||
+    (resumeData.summary && resumeData.summary.trim())
+  );
 
-  // Previously Viewed Jobs state initialized from localStorage
-  const [previouslyViewedJobs, setPreviouslyViewedJobs] = useState<ViewedJob[]>(() => {
+  // Resume source state: default to 'compass' if content exists, otherwise 'upload'
+  const [sourceMode, setSourceMode] = useState<ResumeSourceMode>(() => {
+    return hasCompassContent ? 'compass' : 'upload';
+  });
+
+  // Source A: Uploaded resume file state
+  const [uploadedResume, setUploadedResume] = useState<ExtractedResumeText | null>(null);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showExtractedText, setShowExtractedText] = useState<boolean>(false);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Job description input state
+  const [selectedJdIndex, setSelectedJdIndex] = useState(0);
+  const [jdText, setJdText] = useState(SAMPLE_JDS[0].text);
+  const [jobUrl, setJobUrl] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const [urlValidationError, setUrlValidationError] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Active Job Reference metadata
+  const [activeJobInfo, setActiveJobInfo] = useState<{ title: string; company: string; source: string }>({
+    title: SAMPLE_JDS[0].title,
+    company: SAMPLE_JDS[0].company,
+    source: SAMPLE_JDS[0].source,
+  });
+
+  // Manual Metadata editing state
+  const [showManualMeta, setShowManualMeta] = useState<boolean>(false);
+  const [manualTitle, setManualTitle] = useState<string>(SAMPLE_JDS[0].title);
+  const [manualCompany, setManualCompany] = useState<string>(SAMPLE_JDS[0].company);
+
+  // Previously Viewed Jobs storage
+  const [previouslyViewedJobs, setPreviouslyViewedJobs] = useState<PreviouslyViewedJob[]>(() => {
     try {
-      const saved = localStorage.getItem('columbus_viewed_jobs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const stored = localStorage.getItem('compass_previously_viewed_jobs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
-    } catch {
-      // safe fallback
-    }
-    return INITIAL_PRESET_JOBS;
+    } catch {}
+    // Seed with standard presets
+    return SAMPLE_JDS.map((jd, idx) => ({
+      id: `preset-${idx}`,
+      title: jd.title,
+      company: jd.company,
+      text: jd.text,
+      sourceUrl: jd.source,
+      sourceType: 'preset',
+      timestamp: Date.now() - (idx + 1) * 3600000,
+      charCount: jd.text.length,
+    }));
   });
 
-  const [activeJobId, setActiveJobId] = useState<string>(() => {
-    return previouslyViewedJobs[0]?.id || 'preset-pm';
+  // Failure Modal Popup State
+  const [modalState, setModalState] = useState<ImportFailureModalState>({
+    isOpen: false,
+    title: "Couldn't import this job posting",
+    reason: '',
+    attemptedUrl: '',
   });
 
-  const [fetchedJobMeta, setFetchedJobMeta] = useState<{
-    title: string;
-    company: string;
-    source: string;
-  }>(() => {
-    const first = previouslyViewedJobs[0];
-    return {
-      title: first ? first.jobTitle : MBA_ROLES_CATALOG[0].title,
-      company: first ? first.companyName : MBA_ROLES_CATALOG[0].company,
-      source: first ? first.sourceUrl : 'Curated MBA Role',
-    };
-  });
+  // Refs for modal focus trap and textarea
+  const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const pasteManuallyBtnRef = useRef<HTMLButtonElement>(null);
+  const jdTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Controlled textarea bound directly to jdInputText
-  const [jdInputText, setJdInputText] = useState<string>(() => {
-    return previouslyViewedJobs[0]?.jobDescription || MBA_ROLES_CATALOG[0].text;
-  });
+  // Action feedback states
+  const [appliedGapIds, setAppliedGapIds] = useState<Record<string, boolean>>({});
+  const [copiedGapIds, setCopiedGapIds] = useState<Record<string, boolean>>({});
+  const [inlineNotice, setInlineNotice] = useState<string | null>(null);
 
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [appliedGaps, setAppliedGaps] = useState<Record<string, boolean>>({});
-  const [editedSuggestions, setEditedSuggestions] = useState<Record<string, string>>({});
-  const [confirmedGaps, setConfirmedGaps] = useState<Record<string, boolean>>({});
-  const [categoryFilter, setCategoryFilter] = useState<'all' | GapClassification>('all');
+  // Active requirement gap filter
+  const [activeFilter, setActiveFilter] = useState<'all' | 'category_a_matched' | 'category_b_improve' | 'category_c_missing' | 'category_d_uncertain'>('all');
 
-  // Real-time analysis reactive to jdInputText and resumeData
-  const analysis = useMemo(() => {
-    return analyzeJobDescription(jdInputText, resumeData);
-  }, [jdInputText, resumeData]);
+  // Modal accessibility: Escape key listener, body scroll lock, focus restoration
+  useEffect(() => {
+    if (modalState.isOpen) {
+      previousActiveElementRef.current = document.activeElement as HTMLElement;
+      document.body.style.overflow = 'hidden';
+      const timer = setTimeout(() => {
+        pasteManuallyBtnRef.current?.focus();
+      }, 60);
 
-  const saveViewedJobs = (jobs: ViewedJob[]) => {
-    setPreviouslyViewedJobs(jobs);
-    try {
-      localStorage.setItem('columbus_viewed_jobs', JSON.stringify(jobs));
-    } catch {
-      // safe fallback
-    }
-  };
-
-  // Switching active job from Previously Viewed Jobs
-  const handleSelectViewedJob = (job: ViewedJob) => {
-    setActiveJobId(job.id);
-    setFetchedJobMeta({
-      title: job.jobTitle,
-      company: job.companyName,
-      source: job.sourceUrl,
-    });
-    setJdInputText(job.jobDescription);
-    setFetchStatus({
-      type: 'success',
-      message: `Loaded job description for "${job.jobTitle}" ✓`,
-    });
-  };
-
-  // PART 2: Remove single job from history with complete state consistency
-  const handleRemoveViewedJob = (e: React.MouseEvent, idToRemove: string) => {
-    e.stopPropagation(); // Stop propagation to prevent selecting the job on delete
-
-    const updatedList = previouslyViewedJobs.filter((j) => j.id !== idToRemove);
-    saveViewedJobs(updatedList);
-
-    // If the deleted job was currently active:
-    if (activeJobId === idToRemove) {
-      if (updatedList.length > 0) {
-        // Select next remaining history item and sync title, company, URL, and description
-        const nextJob = updatedList[0];
-        setActiveJobId(nextJob.id);
-        setFetchedJobMeta({
-          title: nextJob.jobTitle,
-          company: nextJob.companyName,
-          source: nextJob.sourceUrl,
-        });
-        setJdInputText(nextJob.jobDescription);
-        setFetchStatus({
-          type: 'success',
-          message: `Active job switched to "${nextJob.jobTitle}" after deletion ✓`,
-        });
-      } else {
-        // No history items remain: clear active job reference gracefully, leave JD editable
-        setActiveJobId('');
-        setFetchedJobMeta({
-          title: 'Custom Job Description',
-          company: 'Manual Input',
-          source: 'User Draft',
-        });
-        setFetchStatus({
-          type: 'idle',
-          message: 'Job removed from history. The description text area remains open for manual editing.',
-        });
-      }
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          handleCloseModal();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('keydown', handleKeyDown);
+        document.body.style.overflow = '';
+      };
     } else {
-      // Non-active job deleted: leave active job and its description unchanged!
-      setFetchStatus({
-        type: 'idle',
-        message: 'Removed job from history.',
-      });
+      document.body.style.overflow = '';
     }
+  }, [modalState.isOpen]);
+
+  // If user transitions to match with new Compass resume content, auto-select if previously on empty
+  useEffect(() => {
+    if (hasCompassContent && sourceMode === 'upload' && !uploadedResume) {
+      setSourceMode('compass');
+    }
+  }, [hasCompassContent]);
+
+  // Determine active resume input for comparison engine
+  let activeResumeInput: ResumeData | string = resumeData;
+  if (sourceMode === 'compass') {
+    activeResumeInput = resumeData;
+  } else {
+    activeResumeInput = uploadedResume ? uploadedResume.text : '';
+  }
+
+  // Stage 1-5 Unified Dynamic Analysis Engine State
+  const [engineResult, setEngineResult] = useState<EngineAnalysisResult | null>(null);
+  const [isAnalyzingEngine, setIsAnalyzingEngine] = useState<boolean>(false);
+  const [showWeightsDrawer, setShowWeightsDrawer] = useState<boolean>(false);
+  const [selectedEvidenceUnitForResumeView, setSelectedEvidenceUnitForResumeView] = useState<ResumeEvidenceUnit | null>(null);
+  const [userDescribedNotes, setUserDescribedNotes] = useState<Record<string, string>>({});
+  const [userConfirmedCards, setUserConfirmedCards] = useState<Record<string, boolean>>({});
+  const [isReEvaluatingNote, setIsReEvaluatingNote] = useState<Record<string, boolean>>({});
+  const [expandedDescribeNote, setExpandedDescribeNote] = useState<Record<string, boolean>>({});
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'critical' | 'important' | 'preferred' | 'bonus'>('all');
+
+  // Report download states
+  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
+  const [isQuickDownloadingPdf, setIsQuickDownloadingPdf] = useState<boolean>(false);
+
+  const prepareReportExportData = (): JobMatchReportExportData => {
+    const roleFit = engineResult?.scoreBreakdown.roleFitScore ?? analysis.overallMatch;
+    const fitLabel =
+      roleFit >= 75
+        ? 'Strong Role Fit'
+        : roleFit >= 50
+        ? 'Competitive with Gaps'
+        : 'Substantial Gaps';
+
+    const cardsToExport: ThreeBlockResultCard[] = engineResult?.cards || [];
+
+    return {
+      jobInfo: {
+        title: activeJobInfo.title || analysis.inferredRole || 'Target Role',
+        company: activeJobInfo.company || 'Target Company',
+        sourceUrl: activeJobInfo.source || jobUrl || undefined,
+        location: engineResult?.metadata?.location,
+        experienceRange: engineResult?.metadata?.experienceRange,
+        workplaceType: engineResult?.metadata?.workplaceType,
+      },
+      candidateInfo: {
+        name: resumeData.fullName || undefined,
+        sourceMode,
+        fileName: uploadedResume?.fileName,
+        charCount: uploadedResume?.charCount,
+        detectedSeniority: engineResult?.resumeFacts.detectedSeniorityLevel,
+        totalExperienceYears: engineResult?.resumeFacts.totalExperienceYears,
+      },
+      scores: {
+        overallFitScore: roleFit,
+        fitLabel,
+        priorityWeightedScore: engineResult?.scoreBreakdown.roleFitScore ?? analysis.keywordCoverage,
+        quantifiedMetricsScore:
+          engineResult?.resumeFacts.quantifiedMetricsPercent ?? analysis.quantifiedImpactScore,
+        metricsBulletsCount: engineResult?.resumeFacts.metricsBulletsCount,
+        totalBulletsCount: engineResult?.resumeFacts.totalExperienceBullets,
+        atsKeywordScore: engineResult?.scoreBreakdown.wordingScore ?? analysis.structureScore,
+        honestSummary:
+          engineResult?.scoreBreakdown.honestSummary ||
+          `Analysis complete. ${analysis.summary.matchedCount} requirements directly evidenced, ${analysis.summary.improveCount} can be sharpened, and ${analysis.summary.missingCount} are missing.`,
+        counts: {
+          total: cardsToExport.length,
+          matched: engineResult?.scoreBreakdown.counts.matched ?? analysis.summary.matchedCount,
+          canImprove: engineResult?.scoreBreakdown.counts.canImprove ?? analysis.summary.improveCount,
+          missing: engineResult?.scoreBreakdown.counts.missing ?? analysis.summary.missingCount,
+          uncertain: engineResult?.scoreBreakdown.counts.uncertain ?? analysis.summary.uncertainCount,
+          criticalTotal: engineResult?.scoreBreakdown.counts.criticalTotal,
+          criticalMatched: engineResult?.scoreBreakdown.counts.criticalMatched,
+        },
+      },
+      cards: cardsToExport,
+      engineModel: engineResult?.modelUsed || '@veriworkly/ats-engine@0.22.0',
+      generationDate: new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+    };
   };
 
-  // Copy active job URL action
-  const handleCopyActiveJobUrl = async () => {
-    if (!fetchedJobMeta.source || !isHttpUrl(fetchedJobMeta.source)) return;
+  const handleQuickDownloadPdf = async () => {
+    setIsQuickDownloadingPdf(true);
     try {
-      await navigator.clipboard.writeText(fetchedJobMeta.source);
-      setCopiedUrl(true);
-      setTimeout(() => setCopiedUrl(false), 2000);
-    } catch {
-      // fallback
-    }
-  };
-
-  // Handle URL import and extraction
-  const handleFetchFromUrl = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = jobUrl.trim();
-    if (!trimmed) {
-      setFetchStatus({
-        type: 'error',
-        message: 'Please paste a valid job posting URL first.',
-      });
-      return;
-    }
-
-    try {
-      const parsed = new URL(trimmed);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        setFetchStatus({
-          type: 'error',
-          message: 'URL must start with http:// or https://',
-        });
-        return;
+      const data = prepareReportExportData();
+      const ok = await downloadJobMatchPdf(data);
+      if (ok) {
+        const filename = getReportFilename(data, 'pdf');
+        setInlineNotice(`Downloaded ${filename}`);
+        setTimeout(() => setInlineNotice(null), 5000);
       }
-    } catch {
-      setFetchStatus({
-        type: 'error',
-        message: 'The URL entered is invalid. Please verify the web address and try again.',
-      });
+    } catch (err) {
+      console.error('Quick PDF download failed:', err);
+    } finally {
+      setIsQuickDownloadingPdf(false);
+    }
+  };
+  // Base deterministic analysis is immediately available
+  const baseAnalysis: JDAnalysis = analyzeJobDescription(jdText, activeResumeInput);
+
+  // Debounced pass that runs the deterministic ATS engine
+  useEffect(() => {
+    let isCurrent = true;
+    if (!jdText.trim()) {
+      setEngineResult(null);
+      setIsAnalyzingEngine(false);
       return;
     }
 
-    setIsLoading(true);
-    setFetchStatus({
-      type: 'loading',
-      message: 'Retrieving & extracting full job description from link...',
+    setIsAnalyzingEngine(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const rawResume =
+          typeof activeResumeInput === 'string'
+            ? activeResumeInput
+            : generateAtsPlainText(activeResumeInput);
+
+        const res = await runJobMatchAnalysis(jdText, rawResume, {
+          jobCompany: activeJobInfo.company,
+        });
+
+        if (isCurrent) {
+          setEngineResult(res);
+        }
+      } catch (err) {
+        console.warn('ATS engine match error:', err);
+      } finally {
+        if (isCurrent) {
+          setIsAnalyzingEngine(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      isCurrent = false;
+      clearTimeout(timer);
+    };
+  }, [jdText, activeResumeInput, activeJobInfo.company]);
+
+  // One-click Reset / Restart handler: clears JD text, URL, and resets active reference back to fresh empty state
+  const handleResetAll = () => {
+    setJdText('');
+    setJobUrl('');
+    setSelectedJdIndex(-1);
+    setActiveJobInfo({
+      title: 'Target Role',
+      company: 'Target Employer',
+      source: '',
+    });
+    setManualTitle('');
+    setManualCompany('');
+    setShowManualMeta(false);
+    setUrlValidationError(null);
+    setImportStatus(null);
+    setEngineResult(null);
+    setInlineNotice('Workspace reset to empty state. Paste or import a new job description to begin.');
+    setTimeout(() => setInlineNotice(null), 4000);
+    if (jdTextareaRef.current) {
+      jdTextareaRef.current.focus();
+    }
+  };
+
+  const analysis: JDAnalysis = baseAnalysis;
+
+  // Handle uploaded file ingestion
+  const handleProcessFile = async (file: File) => {
+    setIsExtracting(true);
+    setUploadError(null);
+
+    try {
+      const extracted = await extractResumeFileText(file);
+      setUploadedResume(extracted);
+      setSourceMode('upload');
+      setInlineNotice(`Extracted ${extracted.charCount.toLocaleString()} characters from ${file.name}. Benchmark updated.`);
+      setTimeout(() => setInlineNotice(null), 5000);
+    } catch (err: any) {
+      console.error('Resume extraction failed:', err);
+      const msg = err?.message || 'Could not extract text from this document. Please ensure it is a valid text-based PDF, DOCX or TXT.';
+      setUploadError(msg);
+    } finally {
+      setIsExtracting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleProcessFile(file);
+  };
+
+  const handleSelectSampleJd = (index: number) => {
+    setSelectedJdIndex(index);
+    setJdText(SAMPLE_JDS[index].text);
+    setJobUrl(SAMPLE_JDS[index].source);
+    setActiveJobInfo({
+      title: SAMPLE_JDS[index].title,
+      company: SAMPLE_JDS[index].company,
+      source: SAMPLE_JDS[index].source,
+    });
+    setManualTitle(SAMPLE_JDS[index].title);
+    setManualCompany(SAMPLE_JDS[index].company);
+    setUrlValidationError(null);
+    setImportStatus({ type: 'info', message: `Loaded sample job: ${SAMPLE_JDS[index].title}` });
+  };
+
+  // Close failure modal safely restoring focus
+  const handleCloseModal = () => {
+    setModalState((prev) => ({ ...prev, isOpen: false }));
+    if (previousActiveElementRef.current) {
+      previousActiveElementRef.current.focus();
+    }
+  };
+
+  // Handle [Paste manually] click in failure modal
+  const handlePasteManuallyFromModal = () => {
+    handleCloseModal();
+    setShowManualMeta(true);
+    setTimeout(() => {
+      jdTextareaRef.current?.focus();
+    }, 80);
+  };
+
+  // Save successful import to history and active state
+  const handleImportSuccess = (
+    text: string,
+    title: string,
+    company: string,
+    sourceUrl: string,
+    sourceType: 'greenhouse' | 'lever' | 'public_web'
+  ) => {
+    const cleanText = cleanJdText(text);
+
+    setJdText(cleanText);
+    setActiveJobInfo({ title, company, source: sourceUrl });
+    setJobUrl(sourceUrl);
+    setManualTitle(title);
+    setManualCompany(company);
+    setUrlValidationError(null);
+
+    const newRecord: PreviouslyViewedJob = {
+      id: `job-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title,
+      company,
+      text: cleanText,
+      sourceUrl,
+      sourceType,
+      timestamp: Date.now(),
+      charCount: cleanText.length,
+    };
+
+    setPreviouslyViewedJobs((prev) => {
+      const filtered = prev.filter((j) => j.sourceUrl !== sourceUrl && j.title !== title);
+      const updated = [newRecord, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem('compass_previously_viewed_jobs', JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
 
+    setImportStatus({
+      type: 'success',
+      message: `Imported "${title}" from ${company} (${text.length.toLocaleString()} characters).`,
+    });
+  };
+
+  // TIERED IMPORT ENGINE
+  const executeImport = async (rawUrl: string) => {
+    const trimmed = (rawUrl || '').trim();
+    if (!trimmed) return;
+
+    setUrlValidationError(null);
+
+    // B.1 URL validation (before any request)
+    // Trim; require http/https; reject anything else inline with "Please paste a valid job posting link" (no popup for validation errors).
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      setUrlValidationError('Please paste a valid job posting link (beginning with http:// or https://)');
+      return;
+    }
+
     try {
-      const res = await fetch('/api/fetch-jd', {
+      new URL(trimmed);
+    } catch {
+      setUrlValidationError('Please paste a valid job posting link (beginning with http:// or https://)');
+      return;
+    }
+
+    // B.3 Tier 2 — Login-walled / anti-bot sites: do not attempt
+    // If the URL is linkedin.com, indeed.com, glassdoor.com, naukri.com:
+    // Make NO network request. Open the failure popup immediately with site-specific explanation.
+    const loginWalledSite = getLoginWalledSiteName(trimmed);
+    if (loginWalledSite) {
+      setModalState({
+        isOpen: true,
+        title: "Couldn't import this job posting",
+        reason: `${loginWalledSite} requires login and blocks automated access, so job pages there can't be imported by link.`,
+        attemptedUrl: trimmed,
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    setImportStatus(null);
+
+    try {
+      // B.2 Tier 1 — ATS platforms with stable public JSON APIs (browser-only CORS)
+      // Greenhouse
+      const ghInfo = parseGreenhouseUrl(trimmed);
+      if (ghInfo) {
+        try {
+          const ghApiUrl = `https://boards-api.greenhouse.io/v1/boards/${ghInfo.boardToken}/jobs/${ghInfo.jobId}`;
+          const res = await fetch(ghApiUrl);
+          if (res.status === 404) {
+            setModalState({
+              isOpen: true,
+              title: "Couldn't import this job posting",
+              reason: 'Job posting not found on Greenhouse (HTTP 404). The listing may have expired, been closed, or the link may be incomplete.',
+              attemptedUrl: trimmed,
+            });
+            setIsImporting(false);
+            return;
+          }
+          if (!res.ok) {
+            throw new Error(`Greenhouse API responded with HTTP ${res.status}`);
+          }
+          const ghData = await res.json();
+          const cleanDesc = cleanHtmlToPlainText(ghData.content || '');
+          if (!cleanDesc || cleanDesc.length < 50) {
+            setModalState({
+              isOpen: true,
+              title: "Couldn't import this job posting",
+              reason: 'Could not extract sufficient job description text from this Greenhouse posting.',
+              attemptedUrl: trimmed,
+            });
+            setIsImporting(false);
+            return;
+          }
+          const formattedCompany = ghInfo.boardToken.charAt(0).toUpperCase() + ghInfo.boardToken.slice(1);
+          handleImportSuccess(cleanDesc, ghData.title || 'Job Posting', formattedCompany, trimmed, 'greenhouse');
+          setIsImporting(false);
+          return;
+        } catch (err: any) {
+          console.warn('Greenhouse direct fetch error:', err);
+          setModalState({
+            isOpen: true,
+            title: "Couldn't import this job posting",
+            reason: `Could not reach Greenhouse public endpoint: ${err?.message || 'Network error'}.`,
+            attemptedUrl: trimmed,
+          });
+          setIsImporting(false);
+          return;
+        }
+      }
+
+      // Lever
+      const leverInfo = parseLeverUrl(trimmed);
+      if (leverInfo) {
+        try {
+          const leverApiUrl = `https://api.lever.co/v0/postings/${leverInfo.companySlug}/${leverInfo.jobId}`;
+          const res = await fetch(leverApiUrl);
+          if (res.status === 404) {
+            setModalState({
+              isOpen: true,
+              title: "Couldn't import this job posting",
+              reason: 'Job posting not found on Lever (HTTP 404). The listing may have expired, been removed, or the link may be incomplete.',
+              attemptedUrl: trimmed,
+            });
+            setIsImporting(false);
+            return;
+          }
+          if (!res.ok) {
+            throw new Error(`Lever API responded with HTTP ${res.status}`);
+          }
+          const leverData = await res.json();
+          let leverDesc = leverData.descriptionPlain || cleanHtmlToPlainText(leverData.description || '');
+          if (Array.isArray(leverData.lists) && leverData.lists.length > 0) {
+            const listsText = leverData.lists
+              .map((item: any) => `${item.text}:\n${cleanHtmlToPlainText(item.content || '')}`)
+              .join('\n\n');
+            leverDesc = leverDesc ? `${leverDesc}\n\n${listsText}` : listsText;
+          }
+          if (leverData.additionalPlain || leverData.additional) {
+            const add = leverData.additionalPlain || cleanHtmlToPlainText(leverData.additional || '');
+            leverDesc = leverDesc ? `${leverDesc}\n\n${add}` : add;
+          }
+          if (!leverDesc || leverDesc.length < 50) {
+            setModalState({
+              isOpen: true,
+              title: "Couldn't import this job posting",
+              reason: 'Could not extract sufficient job description text from this Lever posting.',
+              attemptedUrl: trimmed,
+            });
+            setIsImporting(false);
+            return;
+          }
+          const formattedCompany = leverInfo.companySlug.charAt(0).toUpperCase() + leverInfo.companySlug.slice(1);
+          handleImportSuccess(leverDesc, leverData.text || 'Job Posting', formattedCompany, trimmed, 'lever');
+          setIsImporting(false);
+          return;
+        } catch (err: any) {
+          console.warn('Lever direct fetch error:', err);
+          setModalState({
+            isOpen: true,
+            title: "Couldn't import this job posting",
+            reason: `Could not reach Lever public endpoint: ${err?.message || 'Network error'}.`,
+            attemptedUrl: trimmed,
+          });
+          setIsImporting(false);
+          return;
+        }
+      }
+
+      // B.4 Tier 3 — Other public company career sites (via /api/fetch-jd)
+      const resp = await fetch('/api/fetch-jd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed }),
       });
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        // Non-JSON response
+      const data = await resp.json().catch(() => null);
+
+      if (resp.status === 404) {
+        setModalState({
+          isOpen: true,
+          title: "Couldn't import this job posting",
+          reason: 'Job posting not found on this website (HTTP 404). The listing may have expired, been removed, or the link is incomplete.',
+          attemptedUrl: trimmed,
+        });
+        setIsImporting(false);
+        return;
       }
 
-      // Check if server endpoint returned 404 (static hosting fallback e.g. GitHub Pages)
-      if (!res.ok || !data || !data.success) {
-        if (res.status === 404) {
-          try {
-            const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(trimmed)}`);
-            if (proxyRes.ok) {
-              const html = await proxyRes.text();
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(html, 'text/html');
-              let title = doc.querySelector('title')?.textContent || 'Imported Job';
-              let company = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content') || 'Target Employer';
-              let description = '';
-
-              const scripts = doc.querySelectorAll('script[type="application/ld+json"]');
-              for (let i = 0; i < scripts.length; i++) {
-                try {
-                  const j = JSON.parse(scripts[i].textContent || '{}');
-                  const items = Array.isArray(j) ? j : j['@graph'] ? j['@graph'] : [j];
-                  const posting = items.find((it: any) => it['@type'] === 'JobPosting');
-                  if (posting && posting.description) {
-                    title = posting.title || title;
-                    company = posting.hiringOrganization?.name || company;
-                    description = posting.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                    break;
-                  }
-                } catch {
-                  // continue
-                }
-              }
-
-              if (!description) {
-                const mainEl = doc.querySelector('main, article, [class*="description"]');
-                if (mainEl && mainEl.textContent && mainEl.textContent.length > 100) {
-                  description = mainEl.textContent.replace(/\s+/g, ' ').trim();
-                }
-              }
-
-              if (description && description.length > 60) {
-                data = {
-                  success: true,
-                  text: description.slice(0, 15000),
-                  title: title.trim(),
-                  company: company.trim(),
-                  sourceUrl: trimmed,
-                };
-              }
-            }
-          } catch {
-            // ignore proxy failure
-          }
-        }
-
-        if (!data || !data.success) {
-          throw new Error(
-            data?.error ||
-              `Unable to fetch job description (HTTP ${res.status}). The website may require login or block automated access. You can paste the text directly into the Job Description box below.`
-          );
-        }
+      if (resp.status === 504) {
+        setModalState({
+          isOpen: true,
+          title: "Couldn't import this job posting",
+          reason: 'The website took longer than 10 seconds to respond (connection timed out).',
+          attemptedUrl: trimmed,
+        });
+        setIsImporting(false);
+        return;
       }
 
-      const fetchedTitle = data.title || 'Job Role';
-      const fetchedCompany = data.company || 'Target Employer';
-      const fetchedText = data.text;
-      const normalizedId = trimmed.toLowerCase().replace(/\/+$/, '');
+      if (!resp.ok || !data?.success) {
+        let failureReason = data?.error || 'Could not retrieve the job description from this link.';
+        if (resp.status === 502) {
+          failureReason = 'The destination website blocked automated access or requires login credentials.';
+        } else if (resp.status === 422) {
+          failureReason = 'Could not extract a readable job description from this page (it may be rendered via JavaScript or behind an application portal).';
+        }
+        setModalState({
+          isOpen: true,
+          title: "Couldn't import this job posting",
+          reason: failureReason,
+          attemptedUrl: trimmed,
+        });
+        setIsImporting(false);
+        return;
+      }
 
-      const newJob: ViewedJob = {
-        id: normalizedId,
-        jobTitle: fetchedTitle,
-        companyName: fetchedCompany,
-        jobDescription: fetchedText,
-        sourceUrl: trimmed,
-        importedAt: Date.now(),
-      };
-
-      // Add to Previously Viewed Jobs (deduplicate, move latest to top)
-      const filtered = previouslyViewedJobs.filter(
-        (j) => j.id !== normalizedId && j.sourceUrl.toLowerCase() !== trimmed.toLowerCase()
-      );
-      const nextList = [newJob, ...filtered];
-      saveViewedJobs(nextList);
-
-      // Set active job reference and update URL display
-      setActiveJobId(newJob.id);
-      setFetchedJobMeta({
-        title: fetchedTitle,
-        company: fetchedCompany,
-        source: trimmed,
-      });
-
-      // Automatically fill the Job Description text area
-      setJdInputText(fetchedText);
-
-      setFetchStatus({
-        type: 'success',
-        message: `Successfully imported "${fetchedTitle}" (${fetchedCompany}) ✓`,
-      });
+      // Success Tier 3
+      handleImportSuccess(data.text, data.title || 'Job Role', data.company || 'Target Company', trimmed, 'public_web');
     } catch (err: any) {
-      // Preserve existing text in text area on error
-      setFetchStatus({
-        type: 'error',
-        message: err.message || 'Could not fetch job posting. You can paste the job description directly below.',
+      console.error('Job import error:', err);
+      setModalState({
+        isOpen: true,
+        title: "Couldn't import this job posting",
+        reason: `Could not connect to the job posting URL (${err?.message || 'network connection failed'}).`,
+        attemptedUrl: trimmed,
       });
     } finally {
-      setIsLoading(false);
+      setIsImporting(false);
     }
   };
 
-  // PART 5: Apply to Resume handler — strictly evidence-based
-  const handleApplyGapImprovement = (gap: RequirementGap) => {
-    if (!onUpdateResume || !gap.supportingEvidence) return;
+  const handleUrlImportSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeImport(jobUrl);
+  };
 
-    const originalText = gap.supportingEvidence.originalBullet;
-    const finalImprovedText = (editedSuggestions[gap.id] || gap.recommendedImprovement || '').trim();
-    if (!finalImprovedText) return;
+  // Restore job from Previously Viewed list
+  const handleLoadPreviouslyViewed = (job: PreviouslyViewedJob) => {
+    setJdText(job.text);
+    setActiveJobInfo({ title: job.title, company: job.company, source: job.sourceUrl });
+    setJobUrl(job.sourceUrl.startsWith('http') ? job.sourceUrl : '');
+    setManualTitle(job.title);
+    setManualCompany(job.company);
+    setUrlValidationError(null);
+    setImportStatus({
+      type: 'info',
+      message: `Restored "${job.title}" (${job.company}) into active comparison.`,
+    });
+  };
 
-    // Deep clone resume data
-    const updated: ResumeData = JSON.parse(JSON.stringify(resumeData));
-    let replaced = false;
+  // Remove job from Previously Viewed list
+  const handleRemovePreviouslyViewed = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPreviouslyViewedJobs((prev) => {
+      const updated = prev.filter((j) => j.id !== id);
+      try {
+        localStorage.setItem('compass_previously_viewed_jobs', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
-    // Search experience bullets
-    for (const exp of updated.experience) {
-      for (let b = 0; b < exp.bullets.length; b++) {
-        if (
-          exp.bullets[b].trim().toLowerCase() === originalText.trim().toLowerCase() ||
-          exp.bullets[b].includes(originalText.slice(0, 25))
-        ) {
-          exp.bullets[b] = finalImprovedText;
-          replaced = true;
-          break;
+  // Manual title & company edit handlers
+  const handleManualTitleChange = (val: string) => {
+    setManualTitle(val);
+    setActiveJobInfo((prev) => ({ ...prev, title: val.trim() || 'Custom Job Posting' }));
+  };
+
+  const handleManualCompanyChange = (val: string) => {
+    setManualCompany(val);
+    setActiveJobInfo((prev) => ({ ...prev, company: val.trim() || 'Target Employer' }));
+  };
+
+  // SOURCE B ACTION: Apply rewrite directly to Compass Resume in memory
+  const handleApplyRewriteToCompassResume = (gap: RequirementGap) => {
+    if (!gap.supportingEvidence || !gap.recommendedImprovement) return;
+
+    const originalBullet = gap.supportingEvidence.originalBullet.trim();
+    const replacement = gap.recommendedImprovement.trim();
+
+    let bulletUpdated = false;
+    const updatedExp = resumeData.experience.map((exp) => {
+      const updatedBullets = exp.bullets.map((b) => {
+        if (b.trim() === originalBullet) {
+          bulletUpdated = true;
+          return replacement;
         }
-      }
-      if (replaced) break;
-    }
+        return b;
+      });
+      return { ...exp, bullets: updatedBullets };
+    });
 
-    // Search projects if not found in experience
-    if (!replaced) {
-      for (const proj of updated.projects) {
-        for (let b = 0; b < proj.bullets.length; b++) {
-          if (
-            proj.bullets[b].trim().toLowerCase() === originalText.trim().toLowerCase() ||
-            proj.bullets[b].includes(originalText.slice(0, 25))
-          ) {
-            proj.bullets[b] = finalImprovedText;
-            replaced = true;
-            break;
+    if (bulletUpdated) {
+      onUpdateResume({ ...resumeData, experience: updatedExp });
+      setAppliedGapIds((prev) => ({ ...prev, [gap.id]: true }));
+      setInlineNotice(`✓ Updated bullet in your Compass resume! Match score recalculated.`);
+      setTimeout(() => setInlineNotice(null), 4000);
+    } else {
+      // Fallback: If not found in experience, check projects
+      let projectUpdated = false;
+      const updatedProjects = (resumeData.projects || []).map((proj) => {
+        const updatedBullets = proj.bullets.map((b) => {
+          if (b.trim() === originalBullet) {
+            projectUpdated = true;
+            return replacement;
           }
+          return b;
+        });
+        return { ...proj, bullets: updatedBullets };
+      });
+
+      if (projectUpdated) {
+        onUpdateResume({ ...resumeData, projects: updatedProjects });
+        setAppliedGapIds((prev) => ({ ...prev, [gap.id]: true }));
+        setInlineNotice(`✓ Updated project bullet in your Compass resume! Match score recalculated.`);
+        setTimeout(() => setInlineNotice(null), 4000);
+      }
+    }
+  };
+
+  // SOURCE A ACTION: Copy suggestion to clipboard
+  const handleCopySuggestion = (gap: RequirementGap) => {
+    if (!gap.recommendedImprovement) return;
+    navigator.clipboard.writeText(gap.recommendedImprovement);
+    setCopiedGapIds((prev) => ({ ...prev, [gap.id]: true }));
+    setTimeout(() => {
+      setCopiedGapIds((prev) => ({ ...prev, [gap.id]: false }));
+    }, 2500);
+  };
+
+  // Card Actions for the 3-Block Result Cards
+  const handleApplyCardRewriteToCompassResume = (card: ThreeBlockResultCard) => {
+    if (!card.whatToDo.sourceBulletText || !card.whatToDo.suggestedRewrite) return;
+    const originalBullet = card.whatToDo.sourceBulletText.trim();
+    const replacement = card.whatToDo.suggestedRewrite.trim();
+
+    let bulletUpdated = false;
+    const updatedExp = resumeData.experience.map((exp) => {
+      const updatedBullets = exp.bullets.map((b) => {
+        if (b.trim() === originalBullet || originalBullet.includes(b.trim()) || b.trim().includes(originalBullet)) {
+          bulletUpdated = true;
+          return replacement;
         }
-        if (replaced) break;
-      }
+        return b;
+      });
+      return { ...exp, bullets: updatedBullets };
+    });
+
+    if (bulletUpdated) {
+      onUpdateResume({ ...resumeData, experience: updatedExp });
+      setAppliedGapIds((prev) => ({ ...prev, [card.id]: true }));
+      setInlineNotice(`✓ Applied rewrite for "${card.requirement.canonicalTerm}" to your Compass resume! Match score recalculated.`);
+      setTimeout(() => setInlineNotice(null), 4000);
+      return;
     }
 
-    if (replaced) {
-      // Track newly optimized bullet for highlight in Resume Studio
-      const currentOptimized = updated.optimizedBullets ? [...updated.optimizedBullets] : [];
-      if (!currentOptimized.includes(finalImprovedText)) {
-        currentOptimized.push(finalImprovedText);
-      }
-      updated.optimizedBullets = currentOptimized;
+    let projUpdated = false;
+    const updatedProj = (resumeData.projects || []).map((proj) => {
+      const updatedBullets = proj.bullets.map((b) => {
+        if (b.trim() === originalBullet || originalBullet.includes(b.trim()) || b.trim().includes(originalBullet)) {
+          projUpdated = true;
+          return replacement;
+        }
+        return b;
+      });
+      return { ...proj, bullets: updatedBullets };
+    });
 
-      onUpdateResume(updated);
-      setAppliedGaps((prev) => ({ ...prev, [gap.id]: true }));
+    if (projUpdated) {
+      onUpdateResume({ ...resumeData, projects: updatedProj });
+      setAppliedGapIds((prev) => ({ ...prev, [card.id]: true }));
+      setInlineNotice(`✓ Applied rewrite for "${card.requirement.canonicalTerm}" to your Compass resume! Match score recalculated.`);
+      setTimeout(() => setInlineNotice(null), 4000);
     }
   };
 
-  // Candidate confirmation for Category D (Uncertain)
-  const handleConfirmCandidateExperience = (gapId: string, confirmed: boolean) => {
-    setConfirmedGaps((prev) => ({ ...prev, [gapId]: confirmed }));
+  const handleCopyCardSuggestion = (card: ThreeBlockResultCard) => {
+    if (!card.whatToDo.suggestedRewrite) return;
+    navigator.clipboard.writeText(card.whatToDo.suggestedRewrite);
+    setCopiedGapIds((prev) => ({ ...prev, [card.id]: true }));
+    setTimeout(() => {
+      setCopiedGapIds((prev) => ({ ...prev, [card.id]: false }));
+    }, 2500);
   };
 
-  // Filtered requirement gaps
-  const displayedGaps = useMemo(() => {
-    if (categoryFilter === 'all') return analysis.requirementGaps;
-    return analysis.requirementGaps.filter((g) => g.classification === categoryFilter);
-  }, [analysis.requirementGaps, categoryFilter]);
+  const handleToggleDescribeNote = (cardId: string) => {
+    setExpandedDescribeNote((prev) => ({ ...prev, [cardId]: !prev[cardId] }));
+  };
+
+  const handleReEvaluateNote = (cardId: string) => {
+    const note = userDescribedNotes[cardId];
+    if (!note || note.trim().length < 5) return;
+
+    setIsReEvaluatingNote((prev) => ({ ...prev, [cardId]: true }));
+    setTimeout(() => {
+      setUserConfirmedCards((prev) => ({ ...prev, [cardId]: true }));
+      setIsReEvaluatingNote((prev) => ({ ...prev, [cardId]: false }));
+      setInlineNotice(`✓ Experience verified: Re-evaluation confirmed for this qualification.`);
+      setTimeout(() => setInlineNotice(null), 4000);
+    }, 450);
+  };
+
+  const filteredGaps = analysis.requirementGaps.filter((g) => {
+    if (activeFilter === 'all') return true;
+    return g.classification === activeFilter;
+  });
+
+  const cardsList = engineResult?.cards || [];
+  const filteredCards = cardsList.filter((card) => {
+    // Classification filter
+    if (activeFilter === 'category_a_matched' && card.classification !== 'matched') return false;
+    if (activeFilter === 'category_b_improve' && card.classification !== 'can_improve') return false;
+    if (activeFilter === 'category_c_missing' && card.classification !== 'missing') return false;
+    if (activeFilter === 'category_d_uncertain' && card.classification !== 'uncertain') return false;
+
+    // Priority filter
+    if (priorityFilter !== 'all' && card.requirement.priority !== priorityFilter) return false;
+
+    return true;
+  });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8 bg-[#070B14] text-slate-100">
-      {/* Upload Modal */}
-      {onUpdateResume && (
-        <ResumeUploadModal
-          isOpen={isUploadModalOpen}
-          onClose={() => setIsUploadModalOpen(false)}
-          onApplyParsedResume={(parsed) => {
-            onUpdateResume(parsed);
-          }}
-        />
-      )}
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#00DF89] uppercase tracking-wider">
-            <span>Module 3</span>
-            <span aria-hidden="true">·</span>
-            <span>Job Description Matcher</span>
-            <span aria-hidden="true">·</span>
-            <span>Candidate: {resumeData.fullName || 'Unset'}</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
-            Job Description Parsing & ATS Keyword Alignment
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {onUpdateResume && (
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-3.5 py-2 bg-slate-900 border border-emerald-500/30 hover:border-emerald-500 text-[#00DF89] text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"
-            >
-              <span>↑ Upload Resume</span>
-              <span className="text-[10px] bg-[#00DF89] text-slate-950 px-1.5 py-0.2 rounded font-black">Auto-fill</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => onNavigateTab('resume')}
-            className="px-4 py-2 bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md"
-          >
-            Open in Resume Studio →
-          </button>
-        </div>
-      </div>
-
-      {/* Empty Resume Prompt Banner */}
-      {!resumeData.fullName && resumeData.experience.length === 0 && (
-        <div className="bg-[#0E1526] border border-[#00DF89]/40 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#00DF89]">
-              <span>⚡ AUTO-BENCHMARK YOUR RESUME</span>
+    <div className="min-h-screen bg-[#070B14] text-slate-100 p-4 sm:p-6 lg:p-8 space-y-6">
+      <>
+        <div className="max-w-7xl mx-auto space-y-6">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono font-bold text-[#00DF89] px-2.5 py-0.5 rounded bg-[#00DF89]/10 border border-[#00DF89]/30">
+                03. JOB MATCH & ATS BENCHMARK
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Job Match Optimizer</h1>
             </div>
-            <h3 className="text-sm font-bold text-white">Compare your real resume against this Job Description</h3>
-            <p className="text-xs text-slate-400">
-              Upload your resume (PDF or TXT) to instantly calculate your keyword coverage, ATS checks, and tailored bullet rewrites.
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              Deterministic ATS evaluation engine that parses requirements, verifies candidate evidence units, and calculates precise match scores.
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-4 py-2 bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 font-bold text-xs rounded-xl shadow transition-all"
+              onClick={() => onNavigateTab('resume')}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl shadow border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              ↑ Upload Resume
+              <FileText className="w-3.5 h-3.5 text-[#00DF89]" />
+              <span>Resume Studio →</span>
             </button>
-            {onUpdateResume && (
-              <button
-                onClick={() => onUpdateResume(SAMPLE_MBA_RESUME)}
-                className="px-3.5 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold text-xs rounded-xl"
-              >
-                Use Sample Profile
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* Main Grid: Input Column vs Analysis Dashboard */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Job URL & Active Job Reference & Previously Viewed Jobs & Text Input */}
-        <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">Job Description Source</h3>
-            <span className="text-[11px] text-[#00DF89] font-bold bg-[#00DF89]/10 px-2.5 py-0.5 rounded border border-[#00DF89]/30">
-              Requirements 3× Weight
-            </span>
-          </div>
-
-          {/* Job URL Auto-Fetch Section */}
-          <div className="space-y-2 p-3.5 bg-slate-900/90 rounded-xl border border-slate-800">
-            <label className="block text-xs font-bold text-[#00DF89]">
-              Paste Job URL (LinkedIn, Greenhouse, Lever, etc.):
-            </label>
-            <form onSubmit={handleFetchFromUrl} className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="url"
-                value={jobUrl}
-                onChange={(e) => setJobUrl(e.target.value)}
-                disabled={isLoading}
-                placeholder="https://www.linkedin.com/jobs/view/... or any job link"
-                className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89] disabled:opacity-60 font-mono"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !jobUrl.trim()}
-                className="px-3.5 py-2 bg-[#00DF89] hover:bg-[#00c97b] disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow flex items-center justify-center gap-1.5 shrink-0"
-              >
-                {isLoading ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                    <span>Importing...</span>
-                  </>
-                ) : (
-                  <span>Import Job Description</span>
-                )}
-              </button>
-            </form>
-            {fetchStatus && (
-              <div
-                className={`text-xs p-2.5 rounded-lg border flex items-start gap-2 ${
-                  fetchStatus.type === 'error'
-                    ? 'bg-rose-950/40 border-rose-900/60 text-rose-300'
-                    : fetchStatus.type === 'success'
-                    ? 'bg-emerald-950/40 border-[#00DF89]/30 text-[#00DF89]'
-                    : 'bg-slate-950/70 border-slate-800 text-slate-300'
-                }`}
-              >
-                <span className="font-bold shrink-0 mt-0.5">
-                  {fetchStatus.type === 'error' ? '⚠' : fetchStatus.type === 'success' ? '✓' : 'ℹ'}
-                </span>
-                <span className="leading-snug">{fetchStatus.message}</span>
-              </div>
-            )}
-          </div>
-
-          {/* PART 1: Improved Active Job Reference Section */}
-          <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-[#00DF89]/40 rounded-xl space-y-2 shadow-lg">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse"></span>
-                Active Job Reference
-              </span>
-              {isHttpUrl(fetchedJobMeta.source) && (
+            {/* Download Match Report Button with 1-click Quick PDF */}
+            {!user && (
+              <div className="relative inline-flex items-center rounded-xl shadow-sm">
                 <button
                   type="button"
-                  onClick={handleCopyActiveJobUrl}
-                  className="text-[11px] text-slate-400 hover:text-[#00DF89] flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 transition-colors"
-                  title="Copy original job posting link"
-                  aria-label="Copy job posting URL"
+                  onClick={() => setShowDownloadModal(true)}
+                  className="px-3.5 py-1.5 bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 font-bold text-xs rounded-l-xl transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                  title="Download Job Match Audit Report (PDF, Markdown, TXT, JSON)"
                 >
-                  <span>{copiedUrl ? 'Copied ✓' : 'Copy Link'}</span>
+                  <FileDown className="w-3.5 h-3.5 text-slate-950" />
+                  <span>Download Report</span>
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={handleQuickDownloadPdf}
+                  disabled={isQuickDownloadingPdf}
+                  className="px-2 py-1.5 bg-[#00c97b] hover:bg-[#00b36c] text-slate-950 border-l border-emerald-600 font-bold text-xs rounded-r-xl transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+                  title="Quick 1-Click PDF Download"
+                >
+                  {isQuickDownloadingPdf ? (
+                    <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 text-slate-950" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Global Inline Feedback Notice */}
+        {inlineNotice && (
+          <div className="bg-[#00DF89]/15 border border-[#00DF89]/40 text-[#00DF89] text-xs font-bold px-4 py-2.5 rounded-xl animate-fade-in flex items-center justify-between shadow-lg shadow-emerald-950/40">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>{inlineNotice}</span>
+            </div>
+            <button
+              onClick={() => setInlineNotice(null)}
+              className="text-slate-400 hover:text-white font-mono cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* RESUME SOURCE SELECTOR (SOURCE A, SOURCE B, SAMPLE)                       */}
+        {/* ========================================================================= */}
+        <div className="bg-[#0E1526] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#00DF89]">Step 1 · Resume Source</span>
+              <h2 className="text-base font-bold text-white">Select Which Resume to Benchmark</h2>
             </div>
 
-            {/* Display Order: Job Title prominent, followed by Company Name · Original Job Posting URL */}
-            <div className="space-y-1">
-              <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
-                <span className="text-emerald-400">🎯</span>
-                <span>{fetchedJobMeta.title || 'Target Job Role'}</span>
-              </h2>
+          </div>
 
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300">
-                <span className="font-semibold text-white flex items-center gap-1">
-                  <span>🏢</span>
-                  <span>{fetchedJobMeta.company || 'Target Employer'}</span>
-                </span>
-
-                <span className="text-slate-600 font-bold" aria-hidden="true">·</span>
-
-                {isHttpUrl(fetchedJobMeta.source) ? (
-                  <a
-                    href={fetchedJobMeta.source}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[#00DF89] hover:underline hover:text-[#38ef9e] font-medium transition-colors break-all group max-w-full sm:max-w-md"
-                    title={`Open original job posting: ${fetchedJobMeta.source}`}
-                    aria-label={`Open job posting URL in new tab: ${fetchedJobMeta.source}`}
-                  >
-                    <span className="truncate max-w-[220px] sm:max-w-[320px]">
-                      {formatShortUrl(fetchedJobMeta.source)}
-                    </span>
-                    <span className="text-[10px] opacity-80 group-hover:opacity-100 shrink-0 font-bold">↗</span>
-                  </a>
-                ) : (
-                  <span className="text-slate-400 text-[11px] italic">
-                    {fetchedJobMeta.source || 'Curated Reference Role'}
+          {/* 2-Way Source Tabs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* SOURCE A: UPLOAD YOUR RESUME */}
+            <div
+              onClick={() => setSourceMode('upload')}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                sourceMode === 'upload'
+                  ? 'bg-emerald-950/30 border-[#00DF89] ring-1 ring-[#00DF89]/40'
+                  : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-2">
+                    <FileUp className="w-4 h-4 text-[#00DF89]" />
+                    <span>Upload your resume</span>
                   </span>
+                  {sourceMode === 'upload' && (
+                    <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Accepts text-based <strong className="text-slate-300">.pdf</strong>, <strong className="text-slate-300">.docx</strong>, or <strong className="text-slate-300">.txt</strong> (up to 5MB).
+                </p>
+              </div>
+
+              <div className="pt-3">
+                {uploadedResume ? (
+                  <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-800">
+                    <span className="truncate max-w-[160px]">{uploadedResume.fileName}</span>
+                    <span>✓ Ready</span>
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-semibold">
+                    Click to select file
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* SOURCE B: USE MY COMPASS RESUME */}
+            <div
+              onClick={() => {
+                if (hasCompassContent) {
+                  setSourceMode('compass');
+                }
+              }}
+              className={`p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                !hasCompassContent
+                  ? 'bg-slate-900/30 border-slate-800/60 opacity-60 cursor-not-allowed'
+                  : sourceMode === 'compass'
+                  ? 'bg-emerald-950/30 border-[#00DF89] ring-1 ring-[#00DF89]/40 cursor-pointer'
+                  : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 cursor-pointer'
+              }`}
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-[#00DF89]" />
+                    <span>Use my Compass resume</span>
+                  </span>
+                  {sourceMode === 'compass' && (
+                    <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  {hasCompassContent
+                    ? `Live sync from Resume Studio (${resumeData.experience.length} roles, ${resumeData.experience.reduce((a, c) => a + c.bullets.length, 0)} bullets).`
+                    : 'Create a resume in Resume Studio first to enable this source.'}
+                </p>
+              </div>
+
+              <div className="pt-3">
+                {hasCompassContent ? (
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <span>✓ Live Compass data active</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigateTab('resume');
+                    }}
+                    className="text-[11px] text-[#00DF89] hover:underline font-semibold"
+                  >
+                    Open Resume Studio →
+                  </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* PART 2: Previously Viewed Jobs Section with Clear Delete Control */}
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-white text-xs uppercase tracking-wider">
-                  Previously Viewed Jobs
-                </span>
-                <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
-                  {previouslyViewedJobs.length}
-                </span>
-              </div>
-              <span className="text-[11px] text-[#00DF89]">Click to load</span>
-            </div>
+          {/* SOURCE A: UPLOAD DROPZONE & COLLAPSIBLE EXTRACTED TEXT ACCORDION */}
+          {sourceMode === 'upload' && (
+            <div className="pt-2 space-y-3">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.txt"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
 
-            {previouslyViewedJobs.length === 0 ? (
-              <div className="p-4 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
-                No previously viewed jobs yet. Paste any public job posting URL above to import a role.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-2 max-h-[240px] overflow-y-auto pr-1">
-                {previouslyViewedJobs.map((job) => {
-                  const isSelected = activeJobId === job.id;
-                  return (
-                    <div
-                      key={job.id}
-                      onClick={() => handleSelectViewedJob(job)}
-                      className={`group relative text-left p-3 rounded-xl border text-xs transition-all flex items-start justify-between gap-3 cursor-pointer ${
-                        isSelected
-                          ? 'border-[#00DF89] bg-[#00DF89]/15 shadow-sm text-white ring-1 ring-[#00DF89]/40'
-                          : 'border-slate-800 bg-slate-950/70 hover:bg-slate-900 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 pr-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="truncate font-bold text-white text-xs leading-tight">
-                            {job.jobTitle}
-                          </span>
-                          {isSelected && (
-                            <span className="shrink-0 text-[9px] bg-[#00DF89] text-slate-950 px-1.5 py-0.2 rounded font-black uppercase tracking-wider">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate mt-0.5 font-medium">
-                          {job.companyName}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono truncate mt-1">
-                          {isHttpUrl(job.sourceUrl) ? formatShortUrl(job.sourceUrl) : job.sourceUrl}
-                        </div>
-                      </div>
-
-                      {/* PART 2: Delete Control (Visible, adequate clickable area, accessible, stopPropagation) */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleRemoveViewedJob(e, job.id)}
-                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-slate-700/80 bg-slate-900/90 text-slate-300 hover:text-rose-400 hover:bg-rose-950/60 hover:border-rose-800 active:scale-95 transition-all focus:outline-none focus:ring-1 focus:ring-rose-500"
-                        title="Delete job from history"
-                        aria-label={`Delete ${job.jobTitle} from history`}
-                      >
-                        <span className="text-sm font-bold leading-none">✕</span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Job Description Text Section (Fully Editable) */}
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-slate-300">
-                Job Description Text (Fully Editable):
-              </label>
-              <span className="text-[10px] text-slate-500">Live ATS Alignment</span>
-            </div>
-            <textarea
-              rows={11}
-              value={jdInputText}
-              onChange={(e) => {
-                setJdInputText(e.target.value);
-              }}
-              placeholder="Paste any company job posting text here..."
-              className="w-full text-xs p-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00DF89] font-mono leading-relaxed"
-            ></textarea>
-          </div>
-        </div>
-
-        {/* Right Column: Score Breakdown & Evidence-Based Gap Optimization */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Match Score Card */}
-          <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <div>
-                <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">Overall Match</span>
-                <h3 className="text-xl font-bold text-white">
-                  Target Role Inferred: {analysis.inferredRole}
-                </h3>
-                <div className="text-xs text-slate-400">
-                  Formula: 60% Keyword Coverage + 20% Metrics + 20% Structure
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="text-2xl font-black text-white tabular-nums">
-                    {analysis.overallMatch}%
-                  </div>
-                  <div className="text-[11px] text-[#00DF89] font-medium">
-                    {analysis.overallMatch >= 75 ? 'Strong ATS Pass' : 'Needs Optimization'}
-                  </div>
-                </div>
-                <div className="w-12 h-12 rounded-full border-4 border-[#00DF89] flex items-center justify-center font-bold text-xs text-white">
-                  {analysis.overallMatch}%
-                </div>
-              </div>
-            </div>
-
-            {/* Sub-Metric Bars */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                <div className="text-slate-400 font-medium">Keyword Coverage (60%)</div>
-                <div className="text-lg font-bold text-white tabular-nums">{analysis.keywordCoverage}%</div>
-                <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00DF89]" style={{ width: `${analysis.keywordCoverage}%` }}></div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                <div className="text-slate-400 font-medium">Quantified Metrics (20%)</div>
-                <div className="text-lg font-bold text-white tabular-nums">{analysis.quantifiedImpactScore}%</div>
-                <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-[#14B8A6]" style={{ width: `${analysis.quantifiedImpactScore}%` }}></div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                <div className="text-slate-400 font-medium">ATS Structure (20%)</div>
-                <div className="text-lg font-bold text-white tabular-nums">{analysis.structureScore}%</div>
-                <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-slate-600" style={{ width: `${analysis.structureScore}%` }}></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* PART 4 & 6: Evidence-Based Resume Optimization Engine */}
-          <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
-            <div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">
-                    Optimization Engine
-                  </span>
-                  <h3 className="text-base font-bold text-white mt-0.5">
-                    Evidence-Based Requirement & Gap Analysis
-                  </h3>
-                </div>
-                <span className="text-[11px] text-slate-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-                  {analysis.requirementGaps.length} Total Requirements
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Differentiates between skills already supported by your experience versus genuine skill gaps. Apply to Resume is strictly restricted to evidence-backed rewrites.
-              </p>
-            </div>
-
-            {/* Overall 4-Category Summary Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('category_a_matched')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  categoryFilter === 'category_a_matched'
-                    ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300 ring-1 ring-emerald-500/50'
-                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
-                }`}
-              >
-                <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Matched</div>
-                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.matchedCount}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Fully Evidenced</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('category_b_improve')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  categoryFilter === 'category_b_improve'
-                    ? 'border-[#00DF89] bg-[#00DF89]/15 text-[#00DF89] ring-1 ring-[#00DF89]/50'
-                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
-                }`}
-              >
-                <div className="text-[10px] text-[#00DF89] font-bold uppercase tracking-wider">Can Improve</div>
-                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.improveCount}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Apply Eligible</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('category_c_missing')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  categoryFilter === 'category_c_missing'
-                    ? 'border-rose-500 bg-rose-950/40 text-rose-300 ring-1 ring-rose-500/50'
-                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
-                }`}
-              >
-                <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Missing Gaps</div>
-                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.missingCount}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">No Fake Bullets</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('category_d_uncertain')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  categoryFilter === 'category_d_uncertain'
-                    ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500/50'
-                    : 'border-slate-800 bg-slate-900/80 hover:bg-slate-900 text-slate-300'
-                }`}
-              >
-                <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Uncertain</div>
-                <div className="text-lg font-black text-white tabular-nums">{analysis.summary.uncertainCount}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Confirm Details</div>
-              </button>
-            </div>
-
-            {/* Filter Tabs Bar */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-b border-slate-800">
-              <button
-                onClick={() => setCategoryFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors ${
-                  categoryFilter === 'all'
-                    ? 'bg-[#00DF89] text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                All Requirements ({analysis.requirementGaps.length})
-              </button>
-              <button
-                onClick={() => setCategoryFilter('category_b_improve')}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                  categoryFilter === 'category_b_improve'
-                    ? 'bg-[#00DF89] text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                <span>⚡ Can Improve</span>
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
-                  {analysis.summary.improveCount}
-                </span>
-              </button>
-              <button
-                onClick={() => setCategoryFilter('category_c_missing')}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                  categoryFilter === 'category_c_missing'
-                    ? 'bg-rose-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                <span>✕ Missing Skills</span>
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
-                  {analysis.summary.missingCount}
-                </span>
-              </button>
-              <button
-                onClick={() => setCategoryFilter('category_d_uncertain')}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                  categoryFilter === 'category_d_uncertain'
-                    ? 'bg-amber-400 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                <span>❓ Needs Confirmation</span>
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
-                  {analysis.summary.uncertainCount}
-                </span>
-              </button>
-              <button
-                onClick={() => setCategoryFilter('category_a_matched')}
-                className={`px-3 py-1.5 rounded-lg font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                  categoryFilter === 'category_a_matched'
-                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                <span>✓ Matched</span>
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
-                  {analysis.summary.matchedCount}
-                </span>
-              </button>
-            </div>
-
-            {/* List of Requirement Gaps */}
-            <div className="space-y-4">
-              {displayedGaps.length === 0 ? (
-                <div className="p-6 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
-                  No requirements found in this filter category.
-                </div>
-              ) : (
-                displayedGaps.map((gap) => {
-                  const isApplied = appliedGaps[gap.id];
-                  const isConfirmed = confirmedGaps[gap.id];
-
-                  return (
-                    <div
-                      key={gap.id}
-                      className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-3 text-xs"
-                    >
-                      {/* Header row with Requirement Name, Category, Priority, and Status */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-white text-sm tracking-tight capitalize">
-                            {gap.requirement}
-                          </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase">
-                            {gap.category}
-                          </span>
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
-                              gap.importance === 'critical'
-                                ? 'bg-rose-950/80 text-rose-300 border border-rose-800/80'
-                                : gap.importance === 'important'
-                                ? 'bg-amber-950/80 text-amber-300 border border-amber-800/80'
-                                : 'bg-slate-800 text-slate-400'
-                            }`}
-                          >
-                            {gap.importance} Priority
-                          </span>
-                        </div>
-
-                        {/* Classification Badge */}
-                        <div>
-                          {gap.classification === 'category_a_matched' && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-800/50">
-                              ✓ Verified in Resume
-                            </span>
-                          )}
-                          {gap.classification === 'category_b_improve' && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00DF89] bg-[#00DF89]/10 px-2.5 py-0.5 rounded border border-[#00DF89]/30">
-                              ⚡ Can Improve Representation
-                            </span>
-                          )}
-                          {gap.classification === 'category_c_missing' && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-950/40 px-2.5 py-0.5 rounded border border-rose-800/50">
-                              ✕ Missing Skill Gap
-                            </span>
-                          )}
-                          {gap.classification === 'category_d_uncertain' && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400 bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-800/50">
-                              ❓ Needs Confirmation
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* PART 3: Fixed Clean Resume Section & Location Context Header */}
-                      {gap.supportingEvidence && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 flex items-center gap-2">
-                            <span className="text-[#00DF89] font-bold shrink-0">📍 Resume Section:</span>
-                            <span className="text-white font-semibold truncate capitalize">
-                              {gap.supportingEvidence.sectionType}
-                            </span>
-                          </div>
-                          <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 flex items-center gap-2 min-w-0">
-                            <span className="text-slate-400 font-bold shrink-0">Role / Context:</span>
-                            <span className="text-slate-200 font-medium truncate">
-                              {gap.supportingEvidence.roleOrCompany || gap.supportingEvidence.sectionHeading}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Explanation of Gap */}
-                      <p className="text-slate-300 leading-relaxed text-xs">
-                        {gap.explanation}
-                      </p>
-
-                      {/* CATEGORY A: Display supporting evidence bullet directly */}
-                      {gap.classification === 'category_a_matched' && gap.supportingEvidence && (
-                        <div className="p-3 bg-[#070B14] rounded-lg border border-emerald-900/40 text-slate-300 space-y-1">
-                          <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                            Supporting Resume Evidence:
-                          </div>
-                          <div className="italic text-slate-200">
-                            "{gap.supportingEvidence.originalBullet}"
-                          </div>
-                        </div>
-                      )}
-
-                      {/* CATEGORY B: Evidence-backed improvement with editable field and Apply to Resume */}
-                      {gap.classification === 'category_b_improve' && gap.supportingEvidence && (
-                        <div className="space-y-3 pt-1">
-                          {/* Original wording */}
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              Original Bullet in Resume:
-                            </span>
-                            <div className="p-2.5 bg-[#070B14] rounded-lg border border-slate-800 text-slate-400 italic mt-1">
-                              "{gap.supportingEvidence.originalBullet}"
-                            </div>
-                          </div>
-
-                          {/* Editable proposed improvement */}
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-wider">
-                                Proposed Truthful Enhancement (Editable):
-                              </span>
-                              <span className="text-[10px] text-slate-400">Review before applying</span>
-                            </div>
-                            <textarea
-                              rows={3}
-                              value={
-                                editedSuggestions[gap.id] !== undefined
-                                  ? editedSuggestions[gap.id]
-                                  : gap.recommendedImprovement || ''
-                              }
-                              onChange={(e) =>
-                                setEditedSuggestions({ ...editedSuggestions, [gap.id]: e.target.value })
-                              }
-                              disabled={isApplied}
-                              className="w-full p-2.5 bg-[#070B14] border border-[#00DF89]/40 rounded-lg text-white font-medium text-xs focus:outline-none focus:border-[#00DF89] leading-relaxed disabled:opacity-70"
-                            ></textarea>
-                          </div>
-
-                          {/* Apply Action (Strictly Evidence-Backed) */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-                            <span className="text-[11px] text-slate-400">
-                              Replaces the original bullet in your resume and highlights it in Resume Studio.
-                            </span>
-
-                            {onUpdateResume && (
-                              <button
-                                type="button"
-                                onClick={() => handleApplyGapImprovement(gap)}
-                                disabled={isApplied}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
-                                  isApplied
-                                    ? 'bg-[#00DF89]/20 text-[#00DF89] border border-[#00DF89]/40 cursor-default'
-                                    : 'bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 shadow-md hover:scale-[1.01]'
-                                }`}
-                              >
-                                {isApplied ? 'Applied to Resume ✓' : 'Apply to Resume →'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* CATEGORY C: Genuinely missing skill (NO Apply to Resume button!) */}
-                      {gap.classification === 'category_c_missing' && (
-                        <div className="p-3.5 bg-rose-950/20 rounded-xl border border-rose-900/40 space-y-2">
-                          <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
-                            <span>🛡️ Integrity Check: Genuinely Unsupported Requirement</span>
-                          </div>
-                          <p className="text-slate-400 text-xs leading-relaxed">
-                            {gap.recommendedAction}
-                          </p>
-                          <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2 rounded border border-slate-800">
-                            <strong>Note:</strong> In accordance with resume integrity standards, an "Apply to Resume" action is not offered for skills not demonstrated in your experience history.
-                          </div>
-                        </div>
-                      )}
-
-                      {/* CATEGORY D: Uncertain / Needs confirmation */}
-                      {gap.classification === 'category_d_uncertain' && (
-                        <div className="p-3.5 bg-amber-950/20 rounded-xl border border-amber-900/40 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-amber-300 text-xs">
-                              Candidate Confirmation Required:
-                            </span>
-                            {isConfirmed && (
-                              <span className="text-[10px] text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800">
-                                Verified by Candidate ✓
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-slate-300 text-xs">
-                            {gap.recommendedAction}
-                          </p>
-
-                          {!isConfirmed ? (
-                            <div className="flex gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => handleConfirmCandidateExperience(gap.id, true)}
-                                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors"
-                              >
-                                I have hands-on experience with {gap.requirement}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleConfirmCandidateExperience(gap.id, false)}
-                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-xs transition-colors"
-                              >
-                                I do not have this skill
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="p-2.5 bg-emerald-950/30 rounded-lg border border-emerald-800 text-emerald-200 text-xs">
-                              Experience confirmed! You can now add verified details directly into your work experience in Resume Studio.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* 6 ATS System Diagnostics */}
-          <div className="bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
-            <h3 className="text-sm font-bold text-white">Automated ATS System Diagnostics</h3>
-            <div className="space-y-2">
-              {analysis.atsChecks.map((check) => (
+              {!uploadedResume ? (
+                /* Drag & Drop Area */
                 <div
-                  key={check.id}
-                  className={`p-3 rounded-xl border text-xs flex items-start gap-3 ${
-                    check.passed ? 'bg-slate-900 border-slate-800' : 'bg-rose-950/40 border-rose-900/60'
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleProcessFile(file);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-6 sm:p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center space-y-3 ${
+                    isDragging
+                      ? 'border-[#00DF89] bg-emerald-950/40 scale-[1.01]'
+                      : 'border-slate-700 hover:border-slate-500 bg-slate-950/60'
                   }`}
                 >
-                  <span className={`font-bold mt-0.5 ${check.passed ? 'text-[#00DF89]' : 'text-rose-400'}`}>
-                    {check.passed ? '✓' : '⚠'}
-                  </span>
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-white">{check.name}</div>
-                    <div className="text-slate-400 leading-relaxed">{check.message}</div>
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-[#00DF89]">
+                    {isExtracting ? (
+                      <span className="w-5 h-5 border-2 border-[#00DF89] border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Upload className="w-6 h-6" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {isExtracting ? 'Reading document layers & extracting text...' : 'Upload your resume document'}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                      Drag and drop your <strong className="text-slate-300">.pdf</strong>, <strong className="text-slate-300">.docx</strong>, or <strong className="text-slate-300">.txt</strong> file here, or click to browse. Real file validation via magic bytes (max 5MB).
+                    </p>
                   </div>
                 </div>
-              ))}
+              ) : (
+                /* Uploaded File Summary Header */
+                <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-500/30 flex items-center justify-center text-[#00DF89] shrink-0 font-bold font-mono text-xs uppercase">
+                      {uploadedResume.fileType}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        <span>{uploadedResume.fileName}</span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800">
+                          {uploadedResume.charCount.toLocaleString()} chars
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Extracted text successfully parsed into discrete evidence lines for the comparison engine.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setShowExtractedText(!showExtractedText)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <span>{showExtractedText ? 'Hide extracted text' : 'View extracted text'}</span>
+                      {showExtractedText ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      Re-upload
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload Error Banner */}
+              {uploadError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-600/50 rounded-xl text-xs text-rose-300 flex items-start gap-2.5 animate-fade-in">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold">Upload Failed</span>
+                    <p className="text-[11px] leading-relaxed text-rose-200/90">{uploadError}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsed Accordion: "Resume text we read" */}
+              {uploadedResume && showExtractedText && (
+                <div className="space-y-2 p-3 bg-slate-950/90 rounded-xl border border-slate-800 animate-fade-in">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-[#00DF89]" />
+                      <span>Resume text we read ({uploadedResume.charCount.toLocaleString()} characters)</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">Read-only preview</span>
+                  </div>
+                  <pre className="p-3 bg-[#070B14] rounded-lg border border-slate-800/80 text-[11px] font-mono text-slate-300 max-h-56 overflow-y-auto whitespace-pre-wrap leading-relaxed select-text">
+                    {uploadedResume.text}
+                  </pre>
+                  <p className="text-[10px] text-slate-400 italic">
+                    ℹ️ Verify what the engine sees. If formatting or text looks incorrect, re-upload a cleaner text-based PDF, DOCX or TXT file.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* MAIN TWO-COLUMN GRID                                                      */}
+        {/* ========================================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* LEFT COLUMN: JOB DESCRIPTION SOURCE & EDITABLE TEXT AREA */}
+          <div className="lg:col-span-5 bg-[#0E1526] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white">Job Description Source</h3>
+              <span className="text-[11px] text-[#00DF89] font-bold bg-[#00DF89]/10 px-2.5 py-0.5 rounded border border-[#00DF89]/30">
+                Requirements 3× Weight
+              </span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Load Curated MBA Role Preset:
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {SAMPLE_JDS.map((s, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectSampleJd(idx)}
+                    className={`p-2 rounded-xl text-[11px] text-left border transition-all cursor-pointer ${
+                      selectedJdIndex === idx && activeJobInfo.title === s.title
+                        ? 'bg-emerald-950/80 border-[#00DF89] text-white font-bold'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="font-bold truncate">{s.company}</div>
+                    <div className="text-[10px] opacity-80 truncate">{s.title.split('—')[0]}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* URL Import */}
+            <div className="space-y-2.5 p-3.5 bg-slate-900/90 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-[#00DF89]">
+                  Paste Job URL:
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Greenhouse, Lever, or Public Careers
+                </span>
+              </div>
+
+              <form onSubmit={handleUrlImportSubmit} className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={jobUrl}
+                  onChange={(e) => {
+                    setJobUrl(e.target.value);
+                    if (urlValidationError) setUrlValidationError(null);
+                  }}
+                  disabled={isImporting}
+                  placeholder="e.g. https://boards.greenhouse.io/... or https://jobs.lever.co/..."
+                  className="w-full text-xs p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89] disabled:opacity-60 font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={isImporting || !jobUrl.trim()}
+                  className="px-3.5 py-2 bg-[#00DF89] hover:bg-[#00c97b] disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap transition-all shadow flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {isImporting ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                      <span>Importing...</span>
+                    </>
+                  ) : (
+                    <span>Import Job</span>
+                  )}
+                </button>
+              </form>
+
+              {/* Inline URL format validation (no popup for validation errors) */}
+              {urlValidationError && (
+                <p className="text-[11px] text-rose-400 font-medium flex items-center gap-1 animate-fade-in">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{urlValidationError}</span>
+                </p>
+              )}
+
+
+
+              {importStatus && (
+                <div
+                  className={`text-xs p-2.5 rounded-lg border flex items-start gap-2 ${
+                    importStatus.type === 'error'
+                      ? 'bg-rose-950/40 border-rose-900/60 text-rose-300'
+                      : importStatus.type === 'success'
+                      ? 'bg-emerald-950/40 border-[#00DF89]/30 text-[#00DF89]'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <span className="font-bold shrink-0 mt-0.5">
+                    {importStatus.type === 'error' ? '⚠' : importStatus.type === 'success' ? '✓' : 'ℹ'}
+                  </span>
+                  <span className="leading-snug">{importStatus.message}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Previously Viewed Jobs Panel */}
+            {previouslyViewedJobs.length > 0 && (
+              <div className="space-y-2 p-3 bg-slate-950/70 rounded-xl border border-slate-800">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-[#00DF89]" />
+                    <span>Previously Viewed Jobs ({previouslyViewedJobs.length})</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">Click to restore</span>
+                </div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {previouslyViewedJobs.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleLoadPreviouslyViewed(item)}
+                      className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        activeJobInfo.title === item.title && activeJobInfo.company === item.company
+                          ? 'bg-emerald-950/40 border-[#00DF89]/60 text-white'
+                          : 'bg-slate-900/80 border-slate-800/80 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white truncate text-xs">{item.title}</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span className="truncate">{item.company}</span>
+                          <span>•</span>
+                          <span className="uppercase text-[9px] px-1 py-0.2 rounded bg-slate-800 border border-slate-700">
+                            {item.sourceType}
+                          </span>
+                          <span>•</span>
+                          <span>{item.charCount.toLocaleString()} chars</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemovePreviouslyViewed(item.id, e)}
+                          title="Remove from history"
+                          className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Active Reference Box */}
+            <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-[#00DF89]/40 rounded-xl space-y-2 shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-[#00DF89] uppercase tracking-widest flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse" />
+                  Active Job Reference
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualMeta(!showManualMeta)}
+                    className="text-[11px] text-slate-400 hover:text-[#00DF89] flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{showManualMeta ? 'Hide Labels' : 'Edit Labels'}</span>
+                  </button>
+                  {activeJobInfo.source && activeJobInfo.source.startsWith('http') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeJobInfo.source);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-[#00DF89] flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950/60 border border-slate-800 transition-colors cursor-pointer"
+                    >
+                      <span>{copiedLink ? 'Copied ✓' : 'Copy Link'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
+                  <span>🎯</span>
+                  <span>{activeJobInfo.title}</span>
+                </h2>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300">
+                  <span className="font-semibold text-white flex items-center gap-1">
+                    <span>🏢</span>
+                    <span>{activeJobInfo.company}</span>
+                  </span>
+                  {activeJobInfo.source && !activeJobInfo.source.startsWith('http') && (
+                    <span className="text-[10px] font-mono text-slate-400">
+                      ({activeJobInfo.source})
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Title and Company inputs (revealed via Paste Manually or Edit Labels toggle) */}
+            {showManualMeta && (
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2 animate-fade-in">
+                <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                  <span>Job Details (Label Your Manually Pasted Job):</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Syncs Active Reference</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-0.5">Job Title</label>
+                    <input
+                      type="text"
+                      value={manualTitle}
+                      onChange={(e) => handleManualTitleChange(e.target.value)}
+                      placeholder="e.g. Senior Product Manager"
+                      className="w-full text-xs p-2 bg-slate-900 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-0.5">Company Name</label>
+                    <input
+                      type="text"
+                      value={manualCompany}
+                      onChange={(e) => handleManualCompanyChange(e.target.value)}
+                      placeholder="e.g. Swiggy, Stripe, Google"
+                      className="w-full text-xs p-2 bg-slate-900 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-[#00DF89]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Editable Text Area (The Single Source of Truth for JD) */}
+            {/* Editable Text Area (The Single Source of Truth for JD) */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Job Description Text (Fully Editable):
+                </label>
+                <div className="flex items-center gap-2">
+                  {jdText.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleResetAll}
+                      className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center gap-1 font-medium hover:underline cursor-pointer"
+                      title="Clear Job Description and restart analysis"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Clear / Reset</span>
+                    </button>
+                  )}
+                  <span className="text-[10px] text-emerald-400 font-bold">Single Engine Source</span>
+                </div>
+              </div>
+              <textarea
+                ref={jdTextareaRef}
+                rows={11}
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste any company job posting text here..."
+                className="w-full text-xs p-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00DF89] font-mono leading-relaxed"
+              />
             </div>
           </div>
+
+          {/* RIGHT COLUMN: ATS ENGINE MATCH RESULTS */}
+          <div className="lg:col-span-7 space-y-6">
+            <AtsEngineResultsView
+              jdText={jdText}
+              activeJobInfo={activeJobInfo}
+              engineResult={engineResult}
+              isAnalyzing={isAnalyzingEngine}
+              onResetAll={handleResetAll}
+              onLoadSampleJd={() => handleSelectSampleJd(0)}
+              onQuickDownloadPdf={handleQuickDownloadPdf}
+              onOpenExportModal={() => setShowDownloadModal(true)}
+              onRetry={() => {
+                setIsAnalyzingEngine(true);
+                const rawResume =
+                  typeof activeResumeInput === 'string'
+                    ? activeResumeInput
+                    : generateAtsPlainText(activeResumeInput);
+                runJobMatchAnalysis(jdText, rawResume, {
+                  jobCompany: activeJobInfo.company,
+                })
+                  .then(setEngineResult)
+                  .catch((err) => console.warn('Retry error:', err))
+                  .finally(() => setIsAnalyzingEngine(false));
+              }}
+            />
+          </div>
         </div>
-      </div>
+
+        {/* ========================================================================= */}
+        {/* ACCESSIBLE IMPORT FAILURE MODAL POPUP                                     */}
+        {/* ========================================================================= */}
+        {modalState.isOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-failure-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) handleCloseModal();
+            }}
+          >
+            <div
+              className="bg-[#0E1526] border border-slate-700/80 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative text-left space-y-5 animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close X */}
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                aria-label="Close modal"
+                className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Header */}
+              <div className="flex items-start gap-3.5 pr-8">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 id="import-failure-title" className="text-lg font-bold text-white tracking-tight">
+                    {modalState.title}
+                  </h2>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5 truncate max-w-sm">
+                    {modalState.attemptedUrl}
+                  </p>
+                </div>
+              </div>
+
+              {/* Body with reason and manual paste instructions */}
+              <div className="space-y-3 bg-slate-950/70 p-4 rounded-xl border border-slate-800/80 text-xs leading-relaxed">
+                <div className="text-slate-200">
+                  <strong className="text-amber-300">Why it couldn't be imported:</strong>
+                  <p className="mt-1 text-slate-300">{modalState.reason}</p>
+                </div>
+                <div className="border-t border-slate-800 pt-3 text-slate-300">
+                  <p className="font-medium text-slate-200">
+                    Please open the posting, copy the job description, and paste it below — the analysis works exactly the same.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions: [Try again] and [Paste manually] */}
+              <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const urlToRetry = modalState.attemptedUrl;
+                    handleCloseModal();
+                    executeImport(urlToRetry);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Try again</span>
+                </button>
+
+                <button
+                  ref={pasteManuallyBtnRef}
+                  type="button"
+                  onClick={handlePasteManuallyFromModal}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#00DF89] hover:bg-[#00c97b] text-slate-950 font-bold text-xs shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 text-slate-950" />
+                  <span>Paste manually</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* "How This Is Calculated" Weights & Scoring Drawer */}
+        {showWeightsDrawer && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="weights-drawer-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowWeightsDrawer(false);
+            }}
+          >
+            <div
+              className="bg-[#0E1526] border border-slate-700/80 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl relative text-left space-y-5 max-h-[88vh] overflow-y-auto animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-950/70 border border-[#00DF89]/40 flex items-center justify-center text-[#00DF89]">
+                    <HelpCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 id="weights-drawer-title" className="text-base font-bold text-white tracking-tight">
+                      How Role Fit Is Calculated
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Objective, priority-weighted scoring formula with zero opaque estimations.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWeightsDrawer(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Priority Multipliers Table */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">
+                  1. Requirement Priority Weights
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-slate-400 text-[10px] uppercase font-bold">Critical</div>
+                    <div className="text-base font-black text-rose-300">3.0×</div>
+                    <div className="text-[10px] text-slate-500">Must-have / Minimum</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-slate-400 text-[10px] uppercase font-bold">Important</div>
+                    <div className="text-base font-black text-amber-300">2.0×</div>
+                    <div className="text-[10px] text-slate-500">Core Responsibilities</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-slate-400 text-[10px] uppercase font-bold">Preferred</div>
+                    <div className="text-base font-black text-emerald-300">1.0×</div>
+                    <div className="text-[10px] text-slate-500">Nice-to-have</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-slate-400 text-[10px] uppercase font-bold">Bonus</div>
+                    <div className="text-base font-black text-slate-300">0.5×</div>
+                    <div className="text-[10px] text-slate-500">Supplementary</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Classification Scoring */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">
+                  2. Status Multipliers
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-emerald-400 text-[10px] uppercase font-sans font-bold">Matched</div>
+                    <div className="text-sm font-bold text-white">100% (1.0)</div>
+                    <div className="text-[10px] text-slate-500 font-sans">Full evidence</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-[#00DF89] text-[10px] uppercase font-sans font-bold">Can Improve</div>
+                    <div className="text-sm font-bold text-white">65% (0.65)</div>
+                    <div className="text-[10px] text-slate-500 font-sans">Valid adjacent proof</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-amber-400 text-[10px] uppercase font-sans font-bold">Uncertain</div>
+                    <div className="text-sm font-bold text-white">35% (0.35)</div>
+                    <div className="text-[10px] text-slate-500 font-sans">Needs candidate detail</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                    <div className="text-rose-400 text-[10px] uppercase font-sans font-bold">Missing</div>
+                    <div className="text-sm font-bold text-white">0% (0.0)</div>
+                    <div className="text-[10px] text-slate-500 font-sans">No evidence</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Formula & Itemized Breakdown */}
+              <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-2">
+                <div className="font-bold text-white">Formula:</div>
+                <div className="p-2 bg-slate-900 rounded font-mono text-[11px] text-[#00DF89]">
+                  Role Fit % = (Σ Status Multiplier × Priority Weight) ÷ (Σ 1.0 × Priority Weight) × 100
+                </div>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Every requirement extracted from the actual job description text is mapped to a priority based on the section where it appears. Critical requirements carry 3× the scoring influence of preferred qualifications, ensuring honest role fit assessment.
+                </p>
+              </div>
+
+              {/* Quantified Metrics Rule */}
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+                <div className="font-bold text-white">Quantified Metrics Score:</div>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Calculated strictly across complete work experience bullet points (rejoined without line breaks or sentence fragments). Bullets containing verifiable metrics (numbers, percentages, currency, scaling multipliers) count toward the ratio.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* "Show in Resume" Evidence Viewer Drawer */}
+        {selectedEvidenceUnitForResumeView && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resume-viewer-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedEvidenceUnitForResumeView(null);
+            }}
+          >
+            <div
+              className="bg-[#0E1526] border border-slate-700/80 rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl relative text-left space-y-4 max-h-[88vh] overflow-y-auto animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-950/70 border border-[#00DF89]/40 flex items-center justify-center text-[#00DF89]">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 id="resume-viewer-title" className="text-base font-bold text-white tracking-tight">
+                      Resume Evidence Inspector
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Inspecting cited bullet unit #{selectedEvidenceUnitForResumeView.index} in your active resume.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvidenceUnitForResumeView(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Cited Unit Highlight Callout */}
+              <div className="p-3.5 bg-emerald-950/40 rounded-xl border-2 border-[#00DF89]/80 space-y-1.5 shadow-lg">
+                <div className="flex items-center justify-between text-[10px] text-[#00DF89] font-bold uppercase tracking-wider">
+                  <span>Highlighted Evidence Bullet</span>
+                  <span>Unit #{selectedEvidenceUnitForResumeView.index}</span>
+                </div>
+                <div className="text-slate-100 font-mono text-xs leading-relaxed select-text font-medium">
+                  {selectedEvidenceUnitForResumeView.text}
+                </div>
+                {selectedEvidenceUnitForResumeView.roleTitle && (
+                  <div className="text-[10px] text-slate-400 pt-1 border-t border-emerald-900/60">
+                    Role: {selectedEvidenceUnitForResumeView.roleTitle} {selectedEvidenceUnitForResumeView.company ? `at ${selectedEvidenceUnitForResumeView.company}` : ''}
+                  </div>
+                )}
+              </div>
+
+              {/* Full Read-Only Resume Units View */}
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-slate-300">Complete Evidence Units Parsed:</div>
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 max-h-72 overflow-y-auto space-y-2 text-xs font-mono">
+                  {(engineResult?.resumeFacts.evidenceUnits || []).map((u) => {
+                    const isSelected = u.index === selectedEvidenceUnitForResumeView.index;
+                    return (
+                      <div
+                        key={u.index}
+                        id={`evidence-unit-${u.index}`}
+                        className={`p-2.5 rounded-lg border transition-all text-xs select-text ${
+                          isSelected
+                            ? 'bg-emerald-950/70 border-[#00DF89] text-white shadow-md'
+                            : 'bg-slate-900/40 border-slate-800/60 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                          <span>Unit #{u.index} · {u.section}</span>
+                          {isSelected && <span className="text-[#00DF89] font-bold">★ CITED EVIDENCE</span>}
+                        </div>
+                        <div>{u.text}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Job Match Report Download Modal */}
+        <JobMatchDownloadModal
+          isOpen={showDownloadModal}
+          onClose={() => setShowDownloadModal(false)}
+          data={prepareReportExportData()}
+          onToast={(msg) => {
+            setInlineNotice(msg);
+            setTimeout(() => setInlineNotice(null), 5000);
+          }}
+        />
+        </div>
+      </>
     </div>
   );
 };

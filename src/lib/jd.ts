@@ -249,7 +249,7 @@ interface TaggedBulletEvidence {
   bulletIndex: number;
 }
 
-export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAnalysis {
+export function analyzeJobDescription(jdText: string, resumeInput: ResumeData | string): JDAnalysis {
   if (!jdText || jdText.trim().length < 20) {
     return {
       overallMatch: 0,
@@ -283,41 +283,141 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
 
   // Gather all tagged candidate bullets for exact evidence attribution
   const candidateBullets: TaggedBulletEvidence[] = [];
+  let skillsList: string[] = [];
+  let resumeSummary = '';
+  let candidateHeadline = '';
+  let candidateDomain = '';
+  let structurePoints = 0;
+  let hasContactEmail = false;
+  let hasContactPhone = false;
+  let hasLocation = false;
 
-  resume.experience.forEach((exp, expIndex) => {
-    const heading = `Experience: ${exp.role} at ${exp.company}`;
-    const roleOrCompany = `${exp.role} · ${exp.company}`;
-    exp.bullets.forEach((bullet, bulletIndex) => {
+  if (typeof resumeInput === 'string') {
+    const rawText = resumeInput;
+    const lines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+
+    // Extract contact signals
+    const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const phoneMatch = rawText.match(/\+?[\d\s\-()]{8,}\d/);
+    hasContactEmail = Boolean(emailMatch);
+    hasContactPhone = Boolean(phoneMatch);
+    hasLocation = /(bengaluru|bangalore|mumbai|delhi|gurugram|hyderabad|pune|chennai|remote|new york|san francisco|london|singapore|india|usa)/i.test(rawText);
+
+    if (hasContactEmail && hasContactPhone) structurePoints += 30;
+
+    const lowerRaw = rawText.toLowerCase();
+    const hasSummarySection = /(summary|profile|about me|objective)/i.test(lowerRaw);
+    if (hasSummarySection) structurePoints += 20;
+
+    const hasExperienceSection = /(experience|employment|work history|career)/i.test(lowerRaw);
+    const hasEducationSection = /(education|academic|degree|bachelor|master|mba|university|college|institute|btech|b\.e\.)/i.test(lowerRaw);
+    if (hasExperienceSection) structurePoints += 30;
+    if (hasEducationSection) structurePoints += 20;
+
+    // Detect candidate bullet & narrative lines with section and role tracking
+    let currentSection = 'Professional Experience';
+    let currentRoleOrCompany = '';
+    let lineIdx = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^[=\-_*~#]{3,}$/.test(line)) continue;
+
+      // Detect common resume section headings
+      const sectionMatch = line.match(/^(summary|professional summary|work experience|experience|employment history|career history|education|technical skills|skills|core competencies|projects|key projects|certifications|awards|leadership|volunteer)/i);
+      if (sectionMatch && line.length < 45) {
+        currentSection = line.trim();
+        currentRoleOrCompany = '';
+        continue;
+      }
+
+      // Detect job role or employer header lines (e.g. "Senior Product Manager | Swiggy", "Deloitte — Senior Analyst (2021-2023)")
+      if (line.length < 90 && !line.startsWith('•') && !line.startsWith('-') && !line.startsWith('*')) {
+        const hasDateOrSeparator = /((19|20)\d{2}|present|current|\||—|–|\bat\b|\bfrom\b)/i.test(line);
+        const hasJobOrCompanyWord = /(manager|engineer|lead|consultant|analyst|director|associate|intern|specialist|developer|designer|founder|head of|vp|swiggy|google|amazon|microsoft|deloitte|mckinsey|accenture|stripe|uber|meta|flipkart)/i.test(line);
+        if (hasDateOrSeparator || hasJobOrCompanyWord) {
+          currentRoleOrCompany = line.trim();
+          continue;
+        }
+      }
+
+      if (line.length < 18) continue;
+      const cleanLine = line.replace(/^[•●▪▫◦‣⁃➢✓✔\-\*]\s*/, '').trim();
+      if (cleanLine.length < 15) continue;
+
+      const locationLabel = currentRoleOrCompany
+        ? `${currentSection} → ${currentRoleOrCompany}`
+        : `${currentSection}`;
+
       candidateBullets.push({
-        text: bullet,
-        sectionHeading: heading,
-        roleOrCompany,
-        sectionType: 'experience',
-        expIndex,
-        bulletIndex,
+        text: cleanLine,
+        sectionHeading: locationLabel,
+        roleOrCompany: currentRoleOrCompany || currentSection,
+        sectionType: currentSection.toLowerCase().includes('project') ? 'projects' : 'experience',
+        bulletIndex: lineIdx++,
+      });
+    }
+
+    resumeSummary = lowerRaw;
+    candidateHeadline = lines.slice(0, 3).join(' ').toLowerCase();
+
+    // Collect skills mentioned in raw text
+    for (const item of MBA_TAXONOMY) {
+      const termMatch = [item.term, ...item.synonyms].some((v) => lowerRaw.includes(v));
+      if (termMatch) {
+        skillsList.push(item.term);
+      }
+    }
+  } else {
+    const resume = resumeInput;
+    resume.experience.forEach((exp, expIndex) => {
+      const heading = `Experience: ${exp.role} at ${exp.company}`;
+      const roleOrCompany = `${exp.role} · ${exp.company}`;
+      exp.bullets.forEach((bullet, bulletIndex) => {
+        if (bullet.trim()) {
+          candidateBullets.push({
+            text: bullet,
+            sectionHeading: heading,
+            roleOrCompany,
+            sectionType: 'experience',
+            expIndex,
+            bulletIndex,
+          });
+        }
       });
     });
-  });
 
-  resume.projects.forEach((proj, projIndex) => {
-    const heading = `Project: ${proj.name}`;
-    const roleOrCompany = proj.name;
-    proj.bullets.forEach((bullet, bulletIndex) => {
-      candidateBullets.push({
-        text: bullet,
-        sectionHeading: heading,
-        roleOrCompany,
-        sectionType: 'projects',
-        projIndex,
-        bulletIndex,
+    resume.projects.forEach((proj, projIndex) => {
+      const heading = `Project: ${proj.name}`;
+      const roleOrCompany = proj.name;
+      proj.bullets.forEach((bullet, bulletIndex) => {
+        if (bullet.trim()) {
+          candidateBullets.push({
+            text: bullet,
+            sectionHeading: heading,
+            roleOrCompany,
+            sectionType: 'projects',
+            projIndex,
+            bulletIndex,
+          });
+        }
       });
     });
-  });
 
-  // Candidate skills text
-  const skillsList = resume.skills.flatMap((s) => s.items).map((s) => s.toLowerCase());
-  const resumeSummary = (resume.summary || '').toLowerCase();
-  const candidateHeadline = (resume.headline || '').toLowerCase();
+    skillsList = resume.skills.flatMap((s) => s.items).map((s) => s.toLowerCase());
+    resumeSummary = (resume.summary || '').toLowerCase();
+    candidateHeadline = (resume.headline || '').toLowerCase();
+    candidateDomain = resume.targetDomain || '';
+
+    hasContactEmail = Boolean(resume.email);
+    hasContactPhone = Boolean(resume.phone);
+    hasLocation = Boolean(resume.location);
+
+    if (resume.fullName && resume.email && resume.phone) structurePoints += 30;
+    if (resume.summary && resume.summary.length > 40) structurePoints += 20;
+    if (resume.experience.length >= 2) structurePoints += 30;
+    if (resume.education.length >= 1) structurePoints += 20;
+  }
 
   let totalWeightedTerms = 0;
   let matchedWeightedTerms = 0;
@@ -410,7 +510,7 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
     const hasDomainExposure =
       resumeSummary.includes(item.category) ||
       candidateHeadline.includes(item.category) ||
-      resume.targetDomain === item.category;
+      candidateDomain === item.category;
 
     // CLASSIFICATION LOGIC
     if (directEvidence) {
@@ -469,20 +569,40 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
       // Category B: Likely Present, Inadequately Represented
       // Ground the rewrite strictly in candidate's original bullet without fabricating fake metrics
       const origText = weakEvidence.text;
-      let cleanImprovement = origText;
+      let cleanImprovement = origText.trim();
+
+      // Clean leading conjunctions or punctuation like "and ", "also ", "- ", ", "
+      cleanImprovement = cleanImprovement.replace(/^(and|also|plus|furthermore|additionally|moreover)\s+/i, '');
+      cleanImprovement = cleanImprovement.replace(/^[,;:\-\–\—\.]+\s*/, '');
 
       // Cleanly replace weak/passive verb with strong leadership verb and embed standard ATS term
-      const leadingPassiveMatch = origText.match(/^(worked on|helped with|responsible for|handled|assisted in|participated in|managed)\s+/i);
+      const leadingPassiveMatch = cleanImprovement.match(/^(worked on|helped with|responsible for|handled|assisted in|participated in|managed)\s+/i);
       if (leadingPassiveMatch) {
         cleanImprovement = cleanImprovement.replace(leadingPassiveMatch[0], 'Spearheaded ');
-      } else if (!/^(led|spearheaded|architected|orchestrated|delivered|engineered|formulated|directed)/i.test(cleanImprovement)) {
-        cleanImprovement = `Spearheaded ${cleanImprovement.charAt(0).toLowerCase()}${cleanImprovement.slice(1)}`;
+      } else if (/^translating\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^translating\b/i, 'Translated');
+      } else if (/^leading\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^leading\b/i, 'Led');
+      } else if (/^managing\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^managing\b/i, 'Managed');
+      } else if (/^building\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^building\b/i, 'Built');
+      } else if (/^developing\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^developing\b/i, 'Developed');
+      } else if (/^driving\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^driving\b/i, 'Drove');
+      } else if (/^creating\b/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.replace(/^creating\b/i, 'Created');
+      } else if (!/^(led|spearheaded|architected|orchestrated|delivered|engineered|formulated|directed|translated|built|designed|developed|scaled|analyzed|automated)/i.test(cleanImprovement)) {
+        cleanImprovement = cleanImprovement.charAt(0).toUpperCase() + cleanImprovement.slice(1);
       }
 
       // Add the exact ATS keyword naturally if missing
       if (!cleanImprovement.toLowerCase().includes(item.term.toLowerCase())) {
-        cleanImprovement = `${cleanImprovement.replace(/\.?$/, '')}, incorporating structured ${item.term} frameworks for stakeholder alignment.`;
+        cleanImprovement = `${cleanImprovement.replace(/\.?$/, '')}, utilizing ${item.term} to optimize operational performance and reporting.`;
       }
+
+      const truncatedSnippet = origText.length > 70 ? `${origText.slice(0, 67)}...` : origText;
 
       requirementGaps.push({
         id: `gap-${item.term.replace(/\s+/g, '_')}`,
@@ -490,7 +610,7 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
         category: item.category,
         importance: importanceLevel,
         classification: 'category_b_improve',
-        explanation: `Your resume demonstrates relevant experience in this area, but uses indirect terminology ("${weakEvidence.text.slice(0, 60)}...") that may not be recognized by automated ATS filters looking for "${item.term}".`,
+        explanation: `Your resume demonstrates relevant experience in this area in your bullet ("${truncatedSnippet}"), but ATS parsers look for the exact term "${item.term}".`,
         supportingEvidence: {
           originalBullet: weakEvidence.text,
           sectionHeading: weakEvidence.sectionHeading,
@@ -561,12 +681,7 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
   const quantifiedImpactScore = allBullets.length > 0 ? Math.round((quantifiedBullets.length / allBullets.length) * 100) : 0;
 
   // Structure Score
-  let structurePoints = 0;
-  if (resume.fullName && resume.email && resume.phone) structurePoints += 30;
-  if (resume.summary && resume.summary.length > 40) structurePoints += 20;
-  if (resume.experience.length >= 2) structurePoints += 30;
-  if (resume.education.length >= 1) structurePoints += 20;
-  const structureScore = structurePoints;
+  const structureScore = Math.min(100, structurePoints);
 
   // Overall Match formula: 60% keyword coverage + 20% quantified impact + 20% structure
   const overallMatch = Math.round(0.6 * keywordCoverage + 0.2 * quantifiedImpactScore + 0.2 * structureScore);
@@ -576,11 +691,11 @@ export function analyzeJobDescription(jdText: string, resume: ResumeData): JDAna
     {
       id: 'contact_info',
       name: 'Contact Coordinates & Header',
-      passed: Boolean(resume.email && resume.phone && resume.location),
+      passed: Boolean(hasContactEmail && hasContactPhone),
       severity: 'error',
       message:
-        resume.email && resume.phone
-          ? 'Email, phone number, and location are fully specified.'
+        hasContactEmail && hasContactPhone
+          ? 'Email and phone number are detected in candidate profile.'
           : 'Missing essential contact coordinates (email/phone).',
     },
     {

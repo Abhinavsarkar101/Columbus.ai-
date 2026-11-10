@@ -124,6 +124,7 @@ export interface ResumeWorkExperience {
   endDate: string;
   current: boolean;
   bullets: string[];
+  extras?: { label: string; value: string }[];
 }
 
 export interface ResumeEducation {
@@ -136,6 +137,39 @@ export interface ResumeEducation {
   endDate: string;
   gpaOrScore?: string;
   honors?: string;
+}
+
+export type ResumeTemplateId = 'clean' | 'minimal' | 'modern' | 'fresher' | 'executive' | 'academic' | 'classic' | 'ivy' | 'tech';
+export type ResumeFontFamily = 'sans' | 'serif' | 'slab' | 'clean' | 'modern';
+export type ResumeFontSize = 'sm' | 'base' | 'lg';
+
+export interface CustomSectionEntry {
+  id: string;
+  title: string;
+  subtitle?: string;
+  location?: string;
+  startDate?: string;
+  endDate?: string;
+  bullets: string[];
+  extras?: { label: string; value: string }[];
+}
+
+export interface CustomSectionKeyValue {
+  label: string;
+  value: string;
+}
+
+export interface CustomSection {
+  id: string;
+  title: string;
+  kind: 'entries' | 'bullets' | 'paragraph' | 'tags' | 'keyvalue';
+  entries?: CustomSectionEntry[];
+  bullets?: string[];
+  paragraph?: string;
+  tags?: string[];
+  keyValues?: CustomSectionKeyValue[];
+  sourceType?: string;
+  confidence?: 'high' | 'low';
 }
 
 export interface ResumeData {
@@ -160,8 +194,16 @@ export interface ResumeData {
     bullets: string[];
   }[];
   certifications: string[];
+  customSections?: CustomSection[];
   targetDomain: DomainId;
   optimizedBullets?: string[];
+  // upRezr-style customizer fields
+  activeTemplate?: ResumeTemplateId;
+  accentColor?: string;
+  fontFamily?: ResumeFontFamily;
+  fontSize?: ResumeFontSize;
+  sectionOrder?: string[];
+  sectionVisibility?: Record<string, boolean>;
 }
 
 export interface AtsCheckResult {

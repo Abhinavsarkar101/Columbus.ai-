@@ -1,0 +1,586 @@
+ROLE AND SCOPE
+You are updating an existing static web app called "Compass" (career guidance for MBA students), hosted on GitHub Pages. First read all existing code and reuse its styles and components. Keep the current look: dark theme, green accent, rounded cards, progress bar, and the entry screen with four cards. You may restructure the code, but the visual style must stay recognisably the same.
+
+Replace: all question content, scoring, results, and any free-text "Others", typed-answer, dropdown-mapping, LLM, API-key or #debug code. Add: closed case-based questions, multi-select, a "None of these fit / Not sure" button, navigation (change track, review screen, carry-over), detailed reports, archetype avatars, print-to-PDF, and a #selftest page.
+
+Internal names for the four entry cards (keep their visible titles):
+A = "I am about to join MBA"        button: "Start Personality & Logic Diagnostic →"
+B = "I have enrolled in MBA school" button: "Start Dual Specialization Check →"
+C = "I know my specialization."     button: "Start Role Shortlist →"
+D = "I know the role I want."       button: "Start Role Readiness Check →"
+Update the question-count text on the cards to match the real flows: A "17 short real-life cases", B "10 questions", C "11 steps", D "about 20 questions, adaptive". Add "About 5 minutes" to each.
+
+BUILD ORDER (free-tier output limit)
+Build in this order, one file per step, and stop at a clean file boundary if you run out of output space, stating which files remain:
+1) data/ files (catalog, archetypes, questions, content, avatars)  2) engine/ pure functions  3) ui/  4) #selftest page.
+If you cannot finish, say exactly what remains so I can reply "continue".
+
+SECTION 0: HARD RULES
+0.1 No LLM, no API key, no backend, no analytics, no external fonts or CDNs. Zero network requests at runtime. Use system fonts.
+0.2 No localStorage, sessionStorage, cookies or IndexedDB. Keep all state in memory for the session. Do not collect personal data.
+0.3 No free-text answers anywhere, except: (a) a search filter on the step-0 picker (filters the list, not stored or scored) and (b) the optional note box in Section 1.6 (plain text, max 150 characters, not scored). Render all text with textContent, never as HTML.
+0.4 Never invent named books, courses, URLs, companies, statistics or salary numbers. Use only the facts in Section 9.1 for numbers. Do not use real film quotes, film stills or actor images.
+0.5 Three layers: data files, pure engine functions (scoreA, scoreB, scoreC, scoreD, buildPlan, buildReport), UI. Expose the engine as window.Compass.engine so #selftest can call it.
+0.6 Mobile-first (works at 360px), one question per screen, keyboard accessible, minimum 16px body text, visible focus outlines, colour never the only signal (always add text or an icon).
+0.7 Plain language. Explain jargon in one short line (see glossary, Section 2.7).
+
+SECTION 1: ENTRY, NAVIGATION AND CARRY-OVER
+1.1 Header on every screen: "Compass", a chip with the current track name, "Question 4 of 12" and a progress bar, and a "Change track" link.
+1.2 State is kept per track in memory: state[A|B|C|D] = {answers, position, result}.
+1.3 "Change track" opens a small confirm: "Your answers for this track are kept for this session. Switch track?" [Switch] [Stay]. Switching returns to the four-card screen. Choosing a card again resumes where that track stopped, with the button reading "Resume" and a "Start fresh" link.
+1.4 Back on question 1 returns to the card screen. Back elsewhere goes one question back and keeps the answer.
+1.5 Review screen before results: lists every question (shortened) with the chosen answer(s) or "Not sure", each with an "Edit" button. Edit jumps to that question; Next then returns directly to the review screen. Buttons: "See my report".
+1.6 Step-0 pickers (specialization in C and in B's context, role in D): grouped list with a search filter, plus a final item "My area isn't listed". That item asks "Pick the closest group" (the six catalog groups in Section 3.1), then shows that group's specializations to pick the closest one. An optional note box ("Add your own label, optional. Shown in your report, not scored.") stores the student's own wording, which appears in the report as "Your area: <note> (closest match: <name>)".
+1.7 Carry-over buttons on reports:
+   A report: "Explore roles for <Primary>" opens C with the specialization pre-filled (the student can still change it).
+   B report: "Explore roles for <Primary>" opens C pre-filled.
+   C report: "Check my readiness for <Primary role>" opens D with the role pre-selected using this map: PM → Product Manager; STR → Strategy Consultant; FIN with CLIENT as primary family → IB Associate; FIN or BNK otherwise → Financial Analyst; MKT → Marketing or Brand Manager; DM → Digital Marketing Manager; ANA or DSA → Business or Data Analyst; HR → HR or Talent Acquisition; OPS or SCM → Operations or Supply Chain Manager; SAL → Sales or Business Development Manager; GEN → Management Trainee (General); every other specialization → Another role (general questions).
+   Every report: "Not what you expected? Try another track."
+1.8 Start Over clears all tracks. Show a confirm first.
+
+SECTION 2: QUESTION SCREEN COMPONENT
+2.1 Layout: a chip "Real-life case" (or "Quick check"), the question text, an answer-mode chip, then option cards, then the escape button, then Back and Next.
+2.2 Answer modes and chips: "Choose 1" (single), "Choose up to 2" (multi, cap 2), "Select all that apply" (multi, no cap), "Rate each skill" (rating).
+2.3 Option cards: letter badge (A, B, C...), full-width, at least 48px tall, tappable anywhere, selected state with a check icon, a thicker border and a bold weight (not colour alone). Use radio semantics for single and checkbox semantics for multi.
+2.4 Escape button on EVERY question, below the options: "None of these fit / Not sure". It is mutually exclusive with the options (choosing it clears the others and vice versa). Next is disabled until the student picks an option or the escape button; the hint reads "Pick an answer, or choose 'None of these fit'".
+2.5 Multi-select scoring: the question weight is split equally across the chosen options (weight ÷ number chosen). Each code or tag inside a chosen option receives that share. Not-sure answers score 0 and are excluded from scoring and normalisation.
+2.6 Confidence label (shown on every report): count the Not-sure answers in the scored questions. 0 or 1 = "High confidence"; 2 or 3 = "Medium confidence"; 4 or more = "Lower confidence: you chose 'Not sure' several times, so treat this as a starting point." Add one line saying what would help (a talk with someone in the field).
+2.7 Glossary: a "What's this?" toggle next to jargon with a one-line plain explanation. Terms: FP&A (planning and budgeting inside a company), DCF (valuing a business from its future cash), EBITDA (a measure of operating profit before some costs), ESG (environment, social and governance), KPI (a number that shows how well something is going), P&L (profit and loss responsibility), ATS (software employers use to screen CVs), MVP (the smallest working version of a product), M&A (mergers and acquisitions), BFSI (banking, financial services and insurance).
+
+SECTION 3: CATALOG, ARCHETYPES, AVATARS
+3.1 Specialization catalog (single source of truth, in this order). Format: code | name | primary type | secondary type | digital. Groups appear in this order and are shown as picker headings.
+Group "Finance and Data" (AN):
+FIN | Finance (Corporate Finance and Investments) | AN | OP | no
+BNK | Banking and Insurance | AN | OP | no
+FTC | Fintech | AN | BU | yes
+ANA | Business Analytics | AN | OP | no
+DSA | Data Science and AI for Business | AN | BU | yes
+Group "Strategy and General Management" (ST):
+STR | Strategy and Consulting | ST | AN | no
+INT | International Business | ST | CO | no
+GEN | General Management | ST | CO | no
+Group "Product and Entrepreneurship" (BU):
+PM | Product Management | BU | AN | no
+ENT | Entrepreneurship and Innovation | BU | PE | no
+FAM | Family Business Management | BU | ST | no
+Group "Marketing, Sales and Media" (PE):
+MKT | Marketing (Brand and Consumer) | PE | ST | no
+DM | Digital Marketing and Social Media | PE | AN | yes
+SAL | Sales and Business Development | PE | ST | no
+MED | Media, Entertainment and Sports Management | PE | BU | no
+Group "People, Health and Society" (CO):
+HR | Human Resource Management | CO | ST | no
+HCM | Healthcare and Hospital Management | CO | OP | no
+PHA | Pharma and Biotech Management | CO | AN | no
+ESG | Sustainability and ESG | CO | ST | no
+HOS | Hospitality, Tourism and Aviation Management | CO | OP | no
+PPN | Public Policy and Nonprofit Management | CO | ST | no
+Group "Operations, Technology and Projects" (OP):
+OPS | Operations Management | OP | AN | no
+SCM | Supply Chain and Logistics | OP | AN | no
+ITM | IT and Systems Management | OP | AN | no
+PRJ | Project Management | OP | CO | no
+RET | Retail and E-commerce Management | OP | PE | yes
+AGR | Agri-business and Rural Management | OP | CO | no
+REI | Real Estate and Infrastructure Management | OP | ST | no
+Show on every specialization screen: "Your college may offer only some of these. Check its list."
+
+3.2 The six archetypes (type codes AN, ST, BU, PE, CO, OP). Fields: name | colour | character reference | our tagline | description | strength | shadow side | works best when | risk | next step.
+AN | The Analyst | #3b82f6 | Peter Brand energy (Moneyball) | "Show me the evidence and I'll show you the move." | You trust evidence and enjoy finding the answer inside the numbers. You are happiest when the problem is precise and the logic can be checked. | Strength: clear, checkable thinking. | Shadow side: can over-analyse when a fast decision is needed. | Works best when: you have good data and time to dig. | Risk: "Strong analysis loses impact if you don't practise explaining it simply." | Next step: "Analyse one company's annual report and present it in 3 slides."
+ST | The Strategist | #8b5cf6 | Gandalf energy | "I see where the road bends before anyone walks it." | You think in long horizons and trade-offs. You like open problems where the job is to choose a direction. | Strength: seeing long-term patterns. | Shadow side: can stay high-level while details slip. | Works best when: the problem is open-ended and you can shape the direction. | Risk: "Open-ended roles reward structured thinking, which needs practice." | Next step: "Read two short business cases and write a one-page recommendation for each."
+BU | The Builder | #f97316 | Tony Stark energy | "Give me a weekend and a garage, and I'll show you a prototype." | You learn by making things and testing them. You are comfortable with uncertainty if it means creating something new. | Strength: turning ideas into working things fast. | Shadow side: can skip planning or the basics. | Works best when: you can test small and improve quickly. | Risk: "Building without a plan can be costly, and some fields need rigorous basics." | Next step: "Build one tiny project in two weeks (a page, a small sale, a survey) and note what you learned."
+PE | The Persuader | #ec4899 | Elle Woods energy | "Underestimate my pitch once. You won't do it twice." | You read what people want and know how to move them. You enjoy winning attention, trust and deals. | Strength: moving people to act. | Shadow side: needs numbers behind the story. | Works best when: you meet people and your effort leads to visible wins. | Risk: "Persuasion works best with numbers behind it, so expect to learn analytics basics." | Next step: "Write a one-page pitch for a product you like, with three supporting numbers."
+CO | The Connector | #10b981 | Woody energy | "Nobody gets left behind, and everyone gets heard." | You get energy from people and purpose. You are drawn to work that develops people or improves lives. | Strength: building trust and developing people. | Shadow side: can take on others' stress or avoid hard conversations. | Works best when: the work has a human purpose. | Risk: "Mission-driven roles can be emotionally demanding, so check the day-to-day reality." | Next step: "Talk to two people in HR, healthcare or sustainability about a typical week."
+OP | The Operator | #eab308 | Mark Watney energy | "Every big problem is a checklist of small ones." | You like making complex things run smoothly. You enjoy clear processes, reliable delivery and steady improvement. | Strength: making complex things run reliably. | Shadow side: routine can bore you, and unclear change can frustrate you. | Works best when: goals are clear and you can improve a process. | Risk: "Process-heavy work can feel routine if you like variety, so look for roles with change projects." | Next step: "Map one process you know on one page and list three fixes."
+Show the character as "Character energy: Peter Brand (Moneyball)". Footer on every report: "Character references are for fun. Not affiliated with any film studio. This is not a clinical personality test."
+3.3 Blend rule: if the top two archetype scores are within 2 points (in Track A) show "You are a blend: part <A>, part <B>" with both avatars (large and small) and use the top one for the strength, shadow and works-best-when lines. For B and C see Sections 5 and 6.
+
+3.4 Avatar SVGs (inline, store as strings in data/avatars; each is decorative with the archetype name in aria-label; show 120px on mobile, 160px on desktop):
+AN: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Analyst avatar"><circle cx="60" cy="60" r="58" fill="#1e3a8a"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#3b82f6"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><rect x="46" y="88" width="7" height="8" fill="#fff"/><rect x="57" y="82" width="7" height="14" fill="#fff"/><rect x="68" y="76" width="7" height="20" fill="#fff"/><circle cx="90" cy="38" r="10" fill="none" stroke="#fff" stroke-width="4"/><path d="M97 46L106 55" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>
+ST: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Strategist avatar"><circle cx="60" cy="60" r="58" fill="#4c1d95"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#8b5cf6"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><path d="M90 18L94 28L104 32L94 36L90 46L86 36L76 32L86 28Z" fill="#fff"/><path d="M42 94C52 84 68 90 78 78" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="4 4" stroke-linecap="round"/></svg>
+BU: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Builder avatar"><circle cx="60" cy="60" r="58" fill="#9a3412"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#f97316"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><path d="M42 44A18 18 0 0 1 78 44Z" fill="#fde047"/><rect x="38" y="42" width="44" height="5" rx="2.5" fill="#fde047"/><circle cx="92" cy="36" r="8" fill="none" stroke="#fff" stroke-width="4" stroke-dasharray="3 3"/><circle cx="92" cy="36" r="3" fill="#fff"/></svg>
+PE: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Persuader avatar"><circle cx="60" cy="60" r="58" fill="#9d174d"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#ec4899"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><rect x="72" y="20" width="28" height="20" rx="8" fill="#fff"/><path d="M80 40L78 49L90 40Z" fill="#fff"/><polygon points="86,24 88,28 92,28 89,31 90,35 86,33 82,35 83,31 80,28 84,28" fill="#ec4899"/></svg>
+CO: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Connector avatar"><circle cx="60" cy="60" r="58" fill="#065f46"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#10b981"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><path d="M92 46C82 38 82 27 89 27C92 27 92 30 92 31C92 30 92 27 95 27C102 27 102 38 92 46Z" fill="#fff"/><path d="M44 90L60 78L76 90Z" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="44" cy="90" r="5" fill="#fff"/><circle cx="76" cy="90" r="5" fill="#fff"/><circle cx="60" cy="78" r="5" fill="#fff"/></svg>
+OP: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="The Operator avatar"><circle cx="60" cy="60" r="58" fill="#854d0e"/><path d="M16 98C16 80 36 70 60 70C84 70 104 80 104 98A58 58 0 0 1 16 98Z" fill="#eab308"/><circle cx="60" cy="48" r="17" fill="#e5e7eb"/><rect x="78" y="22" width="24" height="30" rx="3" fill="#fff"/><rect x="84" y="18" width="12" height="7" rx="2" fill="#713f12"/><polyline points="82,32 85,35 91,28" fill="none" stroke="#ca8a04" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M82 42h16M82 47h12" stroke="#ca8a04" stroke-width="2.5"/></svg>
+
+SECTION 4: TRACK A (about to join MBA). Badge: "Personality Archetype". 17 screens.
+Tags: AN, ST, BU, PE, CO, OP are archetype types. DIG is a "digital tilt" tag. Every question has the escape button. Each of the six types appears in exactly 8 of the 12 core questions.
+
+CORE (weight 1 each)
+A-Q1 [Choose 1] Your college club has ₹10,000 and one event slot. Members disagree about what to do. What do you do first?
+ A. Compare three event ideas on long-term payoff for the club, then pick one [ST]
+ B. Pitch your favourite idea so well that people want to join in [PE]
+ C. Talk to each member privately so nobody feels ignored [CO]
+ D. Build a budget, timeline and task list so the event runs smoothly [OP]
+A-Q2 [Choose 1] A neighbourhood shop is losing customers. The owner asks for your help for one week. You:
+ A. Study where the neighbourhood is heading and suggest a new direction [ST]
+ B. Try a small experiment, such as a new product on one shelf, and watch what happens [BU]
+ C. Chat with regular customers and staff to find out what they miss [CO]
+ D. Fix the basics: stock, opening hours, billing queue and cleanliness [OP]
+A-Q3 [Choose up to 2] It is a free Saturday. Which would you happily spend time on?
+ A. Planning where you want to be in five years [ST]
+ B. Building or fixing something, like an app, a gadget or a small project [BU]
+ C. Convincing a friend to try something new with you [PE]
+ D. Organising your room, files or calendar into a neat system [OP]
+A-Q4 [Choose 1] Your team's project failed its first demo. Your first instinct:
+ A. Step back and ask whether we picked the right problem [ST]
+ B. Rebuild the weakest part quickly and demo again [BU]
+ C. Rework the story so the audience sees the value [PE]
+ D. Check how the team is feeling, then work out what each person learned [CO]
+A-Q5 [Choose 1] You must choose a phone for your parents, who are not tech-savvy. You:
+ A. Compare price, specs and reviews in a table [AN]
+ B. Show them how it fits their daily life until they are excited [PE]
+ C. Ask what worries them and pick what they would feel comfortable with [CO]
+ D. Check warranty, service centres and set-up steps so it just works [OP]
+A-Q6 [Choose 1] Complaints about online orders have doubled at your company, and you get one week to lead the response. You:
+ A. Pull the complaint data and find the biggest root cause [AN]
+ B. Test a quick fix on a small group of orders [BU]
+ C. Talk to unhappy customers and frontline staff first [CO]
+ D. Walk through the order process end to end to find where it breaks [OP]
+A-Q7 [Choose 1] You are asked to launch a new snack at the college canteen. You:
+ A. Survey students and use the numbers to pick the flavour [AN]
+ B. Make a small batch, sell it at one stall and improve it daily [BU]
+ C. Create the name, the poster and the online buzz that makes people queue [PE, DIG]
+ D. Line up supplier, pricing, stock, hygiene and a daily routine [OP]
+A-Q8 [Choose up to 2] Which headlines would you click on?
+ A. "Why this company's profits fell even as sales grew" [AN]
+ B. "Two students built an app that 50,000 people now use" [BU]
+ C. "How one online ad campaign made an old brand cool again" [PE, DIG]
+ D. "Hospital cuts waiting times by listening to patients" [CO]
+A-Q9 [Choose 1] A friend wants to invest their savings and asks your advice. You:
+ A. Ask for the numbers, risks and past performance before saying anything [AN]
+ B. Ask what they want life to look like in 10 years, then plan backwards [ST]
+ C. Explain it so their family feels excited and on board [PE]
+ D. Write a simple step-by-step plan with dates and check-ins [OP]
+A-Q10 [Choose 1] You are choosing between two job offers. What decides it?
+ A. Which one lets you work with data and see measurable results [AN]
+ B. Which one leads to the biggest role in ten years [ST]
+ C. Which one lets you meet clients, speak and influence decisions [PE]
+ D. Which one has the best people and a purpose you care about [CO]
+A-Q11 [Choose 1] Your manager gives you a vague goal: "Improve how we work." You:
+ A. Measure current performance to find the biggest gap [AN]
+ B. Decide what to stop, start and continue based on where the company is heading [ST]
+ C. Pilot one new way of working with a small team [BU]
+ D. Map today's steps and remove the bottlenecks [OP]
+A-Q12 [Choose 1] You get one free day to learn a skill. You pick:
+ A. Analysing data with a spreadsheet or Python [AN]
+ B. Reading industries and spotting trends [ST]
+ C. Building a simple app or website [BU, DIG]
+ D. Coaching and mentoring people [CO]
+
+FOLLOW-UPS (2 screens, chosen by the top archetype; a selected option gives +3 to its specialization; escape button allowed)
+If AN:
+ A-F1 [Choose 1] A client hands you a big pile of data. Which task would you enjoy most?
+  A. Estimating what a company is worth before an investment [FIN]
+  B. Judging how risky a loan or an insurance policy is [BNK]
+  C. Spotting fraud in a payments app [FTC]
+  D. Building a dashboard that shows sales trends [ANA]
+  E. Training a model that predicts which customers will leave [DSA]
+ A-F2 [Choose 1] Which news story would you read to the end?
+  A. How investors judged the latest big share offering [FIN]
+  B. Why banks and insurers are changing how they price risk [BNK]
+  C. How a new payments app is changing the way people pay [FTC]
+  D. How a retailer used data to decide where to open stores [ANA]
+  E. How AI predicts machine breakdowns before they happen [DSA]
+If ST:
+ A-F1 [Choose 1] Your company wants to grow. Which question would you most like to answer?
+  A. Which business should we focus on, and which should we stop? [STR]
+  B. Which country should we enter next, and how? [INT]
+  C. How do we get every department working toward the same goal? [GEN]
+ A-F2 [Choose 1] Pick the role you would most enjoy for a year:
+  A. Advising several companies on their hardest problems [STR]
+  B. Running a new market launch abroad [INT]
+  C. Leading a business unit's budget, people and results [GEN]
+If BU:
+ A-F1 [Choose 1] You have an idea. What do you do next?
+  A. Talk to users and shape the product around what they say [PM]
+  B. Raise a little money and launch a first version [ENT]
+  C. Work out how to grow the family business with it [FAM]
+ A-F2 [Choose 1] Which job sounds best?
+  A. Deciding what a software product should do next [PM]
+  B. Founding a company from scratch [ENT]
+  C. Taking over and modernising a family firm [FAM]
+If PE:
+ A-F1 [Choose 1] Which assignment would you grab?
+  A. Positioning a new brand against competitors [MKT]
+  B. Running a social media and search campaign on a small budget [DM]
+  C. Closing a big deal with a new client [SAL]
+  D. Promoting a sports league or a film release [MED]
+ A-F2 [Choose 1] Which result would make you proudest?
+  A. People recognise and love your brand [MKT]
+  B. Your online campaign reaches a million views and drives sales [DM]
+  C. You win a client who said no twice [SAL]
+  D. Your event or show sells out [MED]
+If CO:
+ A-F1 [Choose 1] Which problem would you most like to work on?
+  A. Hiring and growing a happy team [HR]
+  B. Reducing waiting times in a hospital [HCM]
+  C. Helping a company cut its carbon footprint [ESG]
+  D. Running a government or nonprofit scheme that reaches more people [PPN]
+ A-F2 [Choose 1] Which workplace sounds most like you?
+  A. A pharma or biotech company getting medicines to patients [PHA]
+  B. A hotel, airline or travel brand focused on guest experience [HOS]
+  C. A big company's people team [HR]
+  D. A hospital network [HCM]
+If OP:
+ A-F1 [Choose 1] Which problem would you most enjoy solving?
+  A. Making a factory or a service run with fewer errors and delays [OPS]
+  B. Getting products from supplier to customer faster [SCM]
+  C. Choosing and rolling out the right software for a company [ITM]
+  D. Delivering a complex project on time and on budget [PRJ]
+ A-F2 [Choose 1] Which industry would you like to work in?
+  A. Online and offline retail [RET]
+  B. Farming, food and rural markets [AGR]
+  C. Property, construction and infrastructure [REI]
+  D. Logistics and warehousing [SCM]
+If the top two archetypes tie, use the first in the order AN, ST, BU, PE, CO, OP.
+
+CONTEXT (not scored for specialization; used for the "Is an MBA right now?" note)
+A-C1 [Choose up to 2] Why are you thinking about an MBA?
+ A. To switch to a new field [SWITCH]  B. To grow or earn more in my current field [GROW]  C. To start or run a business [BIZ]  D. To build skills and a network [SKILLS]  E. Family or friends expect it [EXPECT]  F. I'm not sure yet [UNSURE]
+A-C2 [Choose 1] How much work experience do you have?
+ A. None yet [XP0]  B. Under 2 years [XP1]  C. 2 to 5 years [XP2]  D. More than 5 years [XP3]
+READINESS (not scored)
+A-R [Choose 1] How clear are you about which specialization fits you?
+ A. Very clear, I have one area in mind [READY_HIGH]  B. Somewhat clear, I have two or three options [READY_MED]  C. Not clear, I need more information about the options [READY_INFO]  D. I know my interests but doubt I can do the work [READY_CONF]
+Escape button on A-R maps to READY_INFO.
+
+SCORING A
+1. typeScore[t] = sum of question weight shares (Section 2.5) for tags t. digCount = sum of shares for DIG (cap 3).
+2. specScore = 2 × typeScore[primary] + typeScore[secondary] + (digital = yes ? digCount : 0) + follow-up points (+3 per selected follow-up option).
+3. Ranking by specScore descending; ties by catalog order.
+4. Primary = rank 1. Alternative = highest-ranked specialization whose primary type differs from Primary's primary type. Stretch = highest-ranked specialization whose primary type differs from both. Explain on screen: "Alternative and Stretch come from different work styles so you can compare."
+5. Archetype = highest typeScore (ties: order AN, ST, BU, PE, CO, OP). Blend per Section 3.3.
+6. Strength labels for the "Your pattern" bars (not percentages): rank 1 and 2 of the six types = "Strong", ranks 3 and 4 = "Moderate", ranks 5 and 6 = "Light". Add a note: "This shows relative preference, not ability."
+7. "Is an MBA right now?" note (show up to two sentences, first matches win):
+ - If the reasons contain only EXPECT and/or UNSURE: "Your reasons are still forming. Talk to three MBA graduates before you commit."
+ - If XP0: "Programs differ: some are built for freshers and others prefer work experience. Check the class profile of your target colleges."
+ - If SWITCH: "Career switchers do best with an internship or project in the new field. Plan one early."
+ - If BIZ: "Check whether the program has an incubator or a venture track."
+ - Otherwise: "Your reasons fit an MBA. Compare programs on the specializations you saw here."
+7b. READINESS: READY_INFO replaces the firm recommendation with "Talk to two alumni in your top two areas and book a career-services session before deciding." READY_CONF adds an encouraging note and one small test project in the Primary area.
+
+SECTION 5: TRACK B (enrolled MBA student). Badge: "Dual Specialization Strategy". 10 screens. Every question has the escape button. Tags are specialization codes: every code in a chosen option receives the question weight share.
+B-Q1 [w1, Choose up to 2] Which core courses made you lose track of time?
+ A. Corporate Finance or Accounting [FIN, BNK]  B. Marketing or Consumer Behaviour [MKT, DM]  C. Operations or Supply Chain [OPS, SCM]  D. Data Analytics or Statistics [ANA, DSA]  E. Organisational Behaviour or HR [HR]  F. Strategy or Entrepreneurship [STR, ENT]  G. Product or technology courses [PM, ITM]
+B-Q2 [w2, Choose 1] A professor offers you a project. Which would you pick?
+ A. Valuing a company that is being acquired [FIN]  B. Planning a social media and search campaign for a new product [DM, MKT]  C. Redesigning a company's hiring and onboarding [HR]  D. Building a dashboard that predicts customer churn [ANA, DSA]  E. Mapping and fixing a delivery network [SCM, OPS]  F. Writing a launch plan for a startup idea [ENT, PM]  G. Designing a patient-flow plan for a hospital [HCM]
+B-Q3 [w2, Choose 1] You have two internship offers and can pick one. Which?
+ A. Product intern at a software company [PM, ITM]  B. Credit or risk intern at a bank or insurer [BNK, FIN]  C. Strategy intern on a consulting team [STR, GEN]  D. Sales or business development intern at a fast-growing company [SAL, MKT]  E. Operations intern at a manufacturer or e-commerce firm [OPS, RET]  F. Sustainability or CSR intern at a large company [ESG, PPN]  G. HR intern in talent acquisition [HR]
+B-Q4 [w1, Choose 1] In a case competition you naturally take:
+ A. The numbers and valuation [FIN, BNK, FTC]  B. The customer story and pitch [MKT, DM, SAL]  C. Vendor, timeline and execution planning [OPS, SCM, PRJ]  D. The data crunching and insight [ANA, DSA]  E. The people and culture plan [HR, PPN]  F. The big-picture recommendation [STR, GEN, INT]  G. The market-entry or new-product idea [ENT, PM, FAM]
+B-Q5 [w2, Choose 1] A friend is starting a company and asks for help. You offer to:
+ A. Build the first version and test it with users [ENT, PM]  B. Build the pricing and fundraising model [FIN, FTC]  C. Build their brand and online presence [DM, MKT]  D. Plan expansion into new countries [INT]  E. Set up operations and suppliers [OPS, SCM]  F. Hire and train the first team [HR]  G. Set up dashboards to track growth [ANA, DSA]
+B-Q6 [w2, Choose 1] A client sends you a messy spreadsheet. Your first step:
+ A. Clean the data and test trends [ANA, DSA]  B. Check costs and reconcile totals [FIN, BNK]  C. Work out the real business question [STR, GEN]  D. Trace where the data comes from and fix the process [OPS, ITM]  E. Turn it into a quick story for the client meeting [SAL, MKT]  F. Ask the people who use it what they need [PM, HR]
+B-Q7 [w2, Choose 1] You are asked to lead a review in a sector you care about. Which?
+ A. Climate and social impact of a company [ESG]  B. Patient outcomes across a hospital network [HCM]  C. Cross-border rules and suppliers [INT, SCM]  D. Medicine launch and distribution for a pharma company [PHA]  E. Farm-to-market supply chain [AGR]  F. Guest experience and revenue for hotels or an airline [HOS]  G. Cost and timeline of a property or infrastructure project [REI, PRJ]  H. Audience growth for a media or sports brand [MED, DM]
+B-Q8 [w1, Choose up to 2] What do you most enjoy explaining to a friend?
+ A. How a company makes money and where its risks are [FIN, BNK]  B. Why people pick one brand over another [MKT, DM]  C. How technology systems fit together [ITM, DSA]  D. How to lead a team through change [HR, GEN]  E. How a product gets to your door [SCM, RET]  F. How a startup finds its first customers [ENT, SAL]  G. How a government or nonprofit scheme helps people [PPN, ESG, HCM]
+B-Q9 [pair choice] Your advisor says you can add a second area. Which pair appeals most?
+ A. Finance + Business Analytics [FIN, ANA]  B. Marketing + Entrepreneurship [MKT, ENT]  C. Operations + IT and Systems [OPS, ITM]  D. Digital Marketing + Business Analytics [DM, ANA]  E. Strategy + International Business [STR, INT]  F. Finance + Marketing [FIN, MKT]
+ Escape button = no pair chosen.
+B-Q10 [credit and time] You have about four courses left. Which plan feels right?
+ A. Enough room for two focused areas [CREDIT_DUAL_OK]  B. One area plus electives in a related field [CREDIT_SINGLE]  C. Only room for one area [CREDIT_SINGLE_TIGHT]  D. I'm not sure yet and want to test my interest first [READY_LOW]  E. My college does not offer dual specialization [DUAL_NOT_OFFERED]
+ Escape button = READY_LOW.
+
+SCORING B
+- score[code] = sum of weight shares for tagged answers. Q9 adds +3 to each of the two pair codes (if a pair was chosen).
+- Ranking by score descending; ties by catalog order. Primary = rank 1, Secondary = rank 2.
+- Pair table (order does not matter). STRONG: FIN+ANA, FIN+FTC, FIN+STR, BNK+FTC, DM+ANA, DM+ENT, MKT+ENT, MKT+SAL, OPS+ANA, OPS+ITM, SCM+ANA, SCM+INT, STR+INT, STR+ENT, HR+STR, HR+ANA, PM+DSA, PM+ENT, PM+ITM, HCM+PHA, ESG+STR, ENT+FAM. OVERLAP (never suggested as partners): MKT+DM, OPS+SCM, ANA+DSA, FIN+BNK. Any other pair = STRETCH.
+- bestPartner(Primary) = the highest-ranked code among the top 5 (excluding Primary) whose pair with Primary is STRONG; if none, the Secondary.
+- Verdict (first match wins):
+ 1. DUAL_NOT_OFFERED: "Your college doesn't offer dual specialization. Take <Primary> as your major and use electives for <Secondary>."
+ 2. READY_LOW: no firm verdict. Next step: a short project in each shortlisted area, an alumni conversation, or a career-services session.
+ 3. CREDIT_SINGLE or CREDIT_SINGLE_TIGHT: "Take <Primary> and add an elective track related to <Secondary>."
+ 4. CREDIT_DUAL_OK:
+   - pair is STRONG: "Workable." If either pair code is outside the top 3 ranks, say "Workable with caution: <code> ranks outside your top 3, so check that you really want it." Explain how the two complement each other in one sentence.
+   - pair is STRETCH: "Workable, but the skill sets differ, so you will need a clear story for recruiters. A stronger fit with your answers is <Primary> + <bestPartner>."
+   - no pair chosen: "A strong pairing for you: <Primary> + <bestPartner>."
+- Always add: "Confirm credit counts and allowed combinations with your college."
+- Personality for B: archetype of the Primary specialization's primary type (blend with the Secondary's primary type if different). Show the avatar(s).
+
+SECTION 6: TRACK C (I know my specialization). Badge: "Specialized Candidate". 11 screens.
+Step 0: choose one specialization (Section 1.6).
+Role families: ANALYTIC, CLIENT, BUILD, OPS_PEOPLE.
+C-Q1 [w2, Choose 1] What kind of day-to-day work sounds best to you?
+ A. Building models, analysing data and finding the answer [ANALYTIC]  B. Talking to clients, customers or stakeholders and convincing them [CLIENT]  C. Designing and shipping something new [BUILD]  D. Running systems, programmes or teams so they work well [OPS_PEOPLE]
+C-Q2 [Select all that apply, evidence] Which of these have you done before?
+ Internship or part-time work in this field; Live project, case competition or hackathon; Certification or structured course in this field; Freelance or side project with real users or clients; None yet (exclusive).
+ evidenceCount = number selected (cap 3).
+C-Q3 [w2, Choose 1] Two offers are on the table in your specialization. Which is more appealing?
+ A. Own the analysis, forecast or report [ANALYTIC]  B. Manage relationships with key clients or accounts [CLIENT]  C. Launch a new product, campaign or programme [BUILD]  D. Improve how a process or team runs [OPS_PEOPLE]
+C-Q4 [Rate each skill 1 to 5, not scored] Rate your comfort: working with data or spreadsheets; presenting to a group; writing short business documents; explaining numbers to non-experts; working under tight deadlines; using AI tools for work tasks. Any skill rated 1 or 2 goes into "Skills to build". Escape button = "Skip rating".
+C-Q5 [Choose 1] Where are you in the placement cycle?
+ Campus drive open and I am shortlisted for some roles [CAMPUS_ACTIVE]; Campus drive coming up soon [CAMPUS_SOON]; Mostly off-campus applications [OFF_CAMPUS]; Not sure how my college's process works [CAMPUS_UNKNOWN]. Escape = CAMPUS_UNKNOWN.
+C-Q6 [Choose 1] Which company types are you targeting?
+ Large corporates or MNCs [TIER_LARGE]; Mid-size or fast-growing companies [TIER_MID]; Startups [TIER_STARTUP]; Consulting or financial firms [TIER_FIRM]; Open to all [TIER_ANY]. Escape = TIER_ANY.
+C-Q7 [Choose up to 2] What matters most in your first job?
+ Starting salary; Learning and growth; Brand name; Work-life balance; Location; Long-term path.
+C-Q8 [Choose 1] How many mock interviews have you done in your specialization?
+ None [MOCK_0]; 1 to 2 [MOCK_1]; 3 to 5 [MOCK_3]; 6 or more [MOCK_5]. Escape = MOCK_0.
+C-Q9 [Choose up to 2] Which interview formats worry you most?
+ Case or problem-solving [GAP_CASE]; Technical or functional questions [GAP_TECH]; Behavioural ("tell me about a time") [GAP_BEHAV]; Group discussion [GAP_GD]; No particular worry [GAP_NONE] (exclusive). Escape = GAP_NONE.
+C-Q10 [Choose 1] How many months until you need an offer?
+ Under 3 [URG_HIGH]; 3 to 6 [URG_MED]; More than 6 [URG_LOW]. Escape = URG_MED.
+
+SCORING C
+- familyScore = sum of weight shares from C-Q1 and C-Q3. Order families by score descending; ties use the order ANALYTIC, CLIENT, BUILD, OPS_PEOPLE.
+- Top 3 families give the 3 recommended roles; the 4th gives the fallback role. Evidence count does not change the ranking.
+- Role titles (indicative; tell students to check real job posts). Format: code: ANALYTIC | CLIENT | BUILD | OPS_PEOPLE
+FIN: FP&A or Financial Analyst | Investment Banking Analyst | Corporate Finance or Treasury Associate | Credit and Risk Operations Associate
+BNK: Credit or Risk Analyst | Relationship Manager (Banking) | Product Associate (Banking or Insurance) | Banking Operations or Underwriting Associate
+FTC: Fintech Data or Risk Analyst | Partnerships or Business Development (Fintech) | Product Associate (Fintech) | Payments Operations Associate
+ANA: Data Analyst | Analytics Consultant | Data Product Analyst | BI or Reporting Analyst
+DSA: Associate Data Scientist | AI or Analytics Solutions Consultant | AI Product Associate | Analytics Delivery Associate
+STR: Consulting Analyst | Associate Consultant | Business Development Associate | Transformation or PMO Associate
+INT: Export-Import Analyst | Global Account Manager | International Market Entry Associate | Trade Operations Executive
+GEN: Business Analyst | Client Relationship Manager | Business Development Associate | Management Trainee (Operations)
+PM: Product Analyst | Customer Success or Partner Manager | Associate Product Manager | Product Operations Associate
+ENT: Business Development Analyst | Partnerships Manager | Founding-team Associate (Startup) | Growth or Operations Associate
+FAM: Business Planning Analyst | Dealer or Key Customer Relations Manager | New Business or Expansion Associate | Family-business Operations Trainee
+MKT: Marketing Analyst | Key Account or Brand Executive | Brand or Product Marketing Associate | Marketing Operations Executive
+DM: Digital Analytics or SEO/SEM Analyst | Performance Marketing or Social Media Account Manager | Content and Growth Marketing Associate | Marketing Automation or Campaign Operations Executive
+SAL: Sales Analyst or Sales Operations Analyst | Business Development Executive or Key Account Manager | New Market or Channel Development Associate | Sales Operations Executive
+MED: Audience or Media Analyst | Media Planning or Brand Partnerships Executive | Content Strategy or Production Associate | Media Operations Coordinator
+HR: HR Analytics Associate | Talent Acquisition Partner | L&D Program Designer | HR Business Partner Trainee
+HCM: Healthcare Data Analyst | Hospital or Pharma Account Executive | Healthcare Program Manager | Hospital Operations Associate
+PHA: Pharma Commercial Analyst | Medical Sales or Key Account Executive | Product or Brand Associate (Pharma) | Pharma Supply and Regulatory Operations Associate
+ESG: ESG Analyst | Sustainability Consultant | ESG Reporting or Program Lead | Compliance and CSR Associate
+HOS: Revenue or Yield Analyst | Guest or Corporate Sales Executive | Experience or Product Development Associate | Hospitality or Airline Operations Executive
+PPN: Policy or Research Analyst | Partnerships and Fundraising Associate | Program Design Associate | Monitoring and Evaluation or Program Operations Associate
+OPS: Operations Analyst | Vendor or Account Manager | Process Improvement Associate | Operations Executive Trainee
+SCM: Supply Chain or Demand Planning Analyst | Procurement or Vendor Manager | Network or Logistics Design Associate | Logistics or Warehouse Operations Executive
+ITM: IT Business Analyst | Functional Technology Consultant | Digital Transformation Associate | IT Service or Delivery Trainee
+PRJ: Project or PMO Analyst | Client and Stakeholder Coordinator | Project Planner or Associate Project Manager | Project Coordinator
+RET: Category or Merchandising Analyst | Key Account or Marketplace Account Manager | E-commerce Category or Growth Associate | Retail or E-commerce Operations Executive
+AGR: Agri-commodity or Market Analyst | Agri-input Sales or Channel Manager | Agri-product Development Associate | Procurement and Farm-linkage Operations Executive
+REI: Real Estate or Investment Analyst | Property Sales or Leasing Manager | Project Development Associate | Property or Facility Management Executive
+- Fallback: show "Campus fallback" if C-Q5 is CAMPUS_ACTIVE or CAMPUS_SOON; otherwise "Off-campus fallback". Content: the 4th-family role, plus "Management Trainee or generalist roles at your target company tier (C-Q6)".
+- Interview rubric for the primary role, four formats scored 1 to 5: Technical or functional, Case or problem-solving, Behavioural, Group discussion. Base from C-Q8: MOCK_0 = 1, MOCK_1 = 2, MOCK_3 = 3, MOCK_5 = 4. Subtract 1 for each format named in C-Q9 (minimum 1). Add 1 to Technical if evidenceCount is 2 or more (maximum 5). For any format scoring 2 or less show a practice action: Technical: "Revise 20 core questions for the role and answer them aloud, timed." Case: "Solve 2 cases a week and explain your structure aloud." Behavioural: "Write 5 stories in situation, action, result form and rehearse them with a friend." Group discussion: "Join 2 practice discussions a week and aim for 2 structured points each." If C-Q8 is MOCK_0 or C-Q5 is CAMPUS_UNKNOWN, add: "Book one mock interview and ask your placement cell how shortlisting works."
+- Salary guidance: never show numbers. Show "Indicative only. Not a promise." and: "Compare your college's last two placement reports for this role family, plus 3 to 5 current job posts that list pay. Pay varies by city, company tier (C-Q6) and your college." Use C-Q7: if "Starting salary" is chosen, add "You rank pay high, so prioritise roles and employers with published pay bands."
+- Risk and next step by the primary family. ANALYTIC: risk "Analytical roles can be crowded, so prove your skills with a portfolio piece." Next "Complete one portfolio analysis and put it on your resume." CLIENT: risk "Client-facing roles need proof of results with numbers." Next "Write 3 stories where you persuaded someone, with the outcome." BUILD: risk "New-product roles have fewer openings, so show something you built." Next "Ship one small project or campaign and write up the result." OPS_PEOPLE: risk "Process roles value reliability, so show you can run something." Next "Document one process you improved with before and after numbers." If C-Q10 = URG_HIGH, prepend "Start with campus and referral channels this week."
+- Personality for C: map family to archetype (ANALYTIC→AN, CLIENT→PE, BUILD→BU, OPS_PEOPLE→OP) and blend with the specialization's primary type if different. Show the avatar(s).
+
+SECTION 7: TRACK D (I know the role I want). Badge: "Target Ready".
+Step 0 role list: Product Manager; Strategy Consultant; IB Associate; Financial Analyst; Marketing or Brand Manager; Digital Marketing Manager; Business or Data Analyst; HR or Talent Acquisition; Operations or Supply Chain Manager; Sales or Business Development Manager; Management Trainee (General); Another role (general questions) with the optional note box (Section 1.6).
+Block mapping: Product Manager = PM block; Strategy Consultant = SC block; IB Associate = IB block; every other role = GENERIC block.
+Step 1 level: Fresher [FRESHER] (no full-time experience, may have internships); Intern [INTERN] (currently or recently interning in a relevant role); Lateral [LATERAL] (working professional changing role or company).
+
+Option levels: HIGH = 100 points, MED = 60, LOW = 30, NONE = 0. Each scored question names a dimension: ROLE (role understanding), EVID (evidence), TECH (technical or case readiness), PRACT (interview practice), NET (network), POS (resume and positioning), AIF (AI fluency). Every question has the escape button. For scored questions the escape button is "Not sure" and is EXCLUDED from scoring, except knowledge checks (marked K), where "Not sure" scores as LOW (30).
+
+CORE (all levels)
+D-C1 [ROLE, w2] How well do you understand what this role does day to day? A. I can describe the daily work and typical deliverables in detail [HIGH]  B. I know the general shape, not the details [MED]  C. I have a rough idea from articles or talks [LOW]
+D-C2 [EVID, w2] Your strongest evidence for this role: A. A shipped product, a closed deal or a case I analysed end to end [HIGH]  B. A class project, competition or internship task related to the role [MED]  C. Coursework or self-study only [LOW]  D. Nothing concrete yet [NONE]
+D-C3 [NET, w1] Have you spoken with someone who holds this role now? A. Yes, more than two conversations [HIGH]  B. Yes, one or two [MED]  C. No, but I can reach out [LOW]  D. No, and I'm not sure how [NONE]
+D-C4 [PRACT, w1] Mock interviews for this role in the last month? A. Three or more [HIGH]  B. One or two [MED]  C. None [NONE]
+D-C5 [PRACT, w2] An interviewer gives you a problem outside your comfort zone. What do you do? A. Break it into parts and state my assumptions before answering [HIGH]  B. Start with a best guess and adjust as I go [MED]  C. Ask for time to think before answering [LOW]
+D-C6 [POS, w1] Your resume for this role is: A. Tailored with quantified impact [HIGH]  B. Tailored, no numbers yet [MED]  C. Generic, needs work [LOW]  D. Not started [NONE]
+D-C7 [urgency, not scored] Weeks until you start applying: A. Under 4 [URG_HIGH]  B. 4 to 8 [URG_MED]  C. 9 to 12 [URG_LOW]  D. More than 12 [URG_NONE]. Escape = URG_MED.
+D-C8 [gap focus, not scored] Which part worries you most? A. Resume screening [GAP_RESUME]  B. Technical or functional test [GAP_TECH]  C. Case or problem-solving rounds [GAP_CASE]  D. Behavioural or fit rounds [GAP_BEHAV]  E. Networking and referrals [GAP_NET]. Escape = use the lowest-scoring dimension.
+D-C9 [AIF, w2] How do you use AI tools for work in this role today? A. Weekly, for real tasks, and I check the outputs [HIGH]  B. Sometimes, for drafting or learning [MED]  C. Tried a few times [LOW]  D. Never [NONE]
+D-C10 [AIF, w1] Which is closest to your approach to AI-generated work? A. I verify facts, numbers and logic before using it [HIGH]  B. I use it as is when it looks right [LOW]  C. I avoid it [NONE]
+
+LEVEL BLOCK
+FRESHER:
+ D-F1 [EVID, w2] Internships or live projects completed? A. None [NONE]  B. One [MED]  C. Two or more [HIGH]
+ D-F2 [EVID, w1] Which fits your story best? A. A project I led end to end [HIGH]  B. A team project with a clear personal contribution [MED]  C. Coursework only [LOW]
+ D-F3 [POS, w1] Are you clear on why you chose this role over others? A. Yes, with specific reasons [HIGH]  B. Partly [MED]  C. Not yet [LOW]
+INTERN:
+ D-I1 [EVID, w2] Is your internship likely to convert to a full-time offer? A. Yes, I was told so [HIGH]  B. Possibly [MED]  C. Unclear [LOW]  D. No [NONE]
+ D-I2 [EVID, w2] How much have you owned? A. A deliverable end to end [HIGH]  B. Supported a deliverable [MED]  C. Mostly observed [LOW]
+ D-I3 [POS, w1] Have you asked your manager for written feedback? A. Yes, regularly [HIGH]  B. Once [MED]  C. Not yet [LOW]
+LATERAL:
+ D-L1 [not scored] Years of relevant experience: A. Under 2  B. 2 to 5  C. More than 5
+ D-L2 [EVID, w2] Your last major impact: A. A measured result I drove [HIGH]  B. A contribution to a team result [MED]  C. Supporting others' work [LOW]
+ D-L3 [POS, w1] Why this role now? A. Clear growth path [HIGH]  B. Pay or title [MED]  C. Need to leave my current role [LOW]  D. Not sure yet [NONE]
+
+ROLE BLOCKS (K = knowledge check; wrong or unsure answers are honest gaps)
+PM:
+ D-P1 [TECH, w2, K] A key product metric drops 15% in one week. First move? A. Check for tracking or data errors, then segment users [HIGH]  B. Call the team to discuss [LOW]  C. Launch a fix now [NONE]
+ D-P2 [TECH, w2, K] A strong product-sense answer is: A. A clear user problem, options, trade-offs and a metric [HIGH]  B. A list of features [LOW]  C. A design sketch only [NONE]
+ D-P3 [EVID, w1] Have you written or reviewed a product requirement document? A. Yes, a full one [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-P4 [ROLE, w1] Can you name the metrics behind a product you use daily? A. Yes, with reasons [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-P5 [TECH, w1, K] Which metric best shows that new users quickly find value? A. Share of new users who complete a key action in week one [HIGH]  B. Total sign-ups [LOW]  C. Number of features shipped [NONE]
+ D-P6 [TECH, w1, K] You have three features and capacity for one. How do you choose? A. Score them on user impact, effort and strategy fit, then decide with data [HIGH]  B. Build what the loudest stakeholder wants [LOW]  C. Build the easiest one [NONE]
+SC:
+ D-S1 [TECH, w2, K] A client's profit fell 20% last year. First step? A. Break profit into revenue and costs, then test each part [HIGH]  B. Look for competitor news [LOW]  C. Recommend cutting costs [NONE]
+ D-S2 [TECH, w2] Quick mental math and stating assumptions aloud: A. Comfortable [HIGH]  B. Practising [MED]  C. Not yet [NONE]
+ D-S3 [PRACT, w1] Structured cases practised end to end: A. Five or more [HIGH]  B. One to four [MED]  C. None [NONE]
+ D-S4 [POS, w1] Can you summarise a recommendation in under 60 seconds? A. Yes [HIGH]  B. With practice [MED]  C. No [NONE]
+ D-S5 [TECH, w1, K] How would you estimate the cups of tea sold daily in a city? A. Split by population, share of tea drinkers and cups per person, and state assumptions [HIGH]  B. Look up a number online [LOW]  C. Guess from one tea stall [NONE]
+ D-S6 [TECH, w1, K] Which structure suits "Should the client enter a new market?" A. Market attractiveness, ability to win, entry options and risks [HIGH]  B. A list of pros and cons without grouping [LOW]  C. Start from the entry plan [NONE]
+IB:
+ D-B1 [TECH, w2, K] Which statement is correct about the three financial statements? A. Net income flows to retained earnings and cash ties to the balance sheet [HIGH]  B. They are independent [NONE]  C. Only the income statement matters [NONE]
+ D-B2 [TECH, w2, K] EBITDA is 100 and the EBITDA multiple is 8. Enterprise value? A. 800 [HIGH]  B. 80 [NONE]  C. 1,000 [NONE]
+ D-B3 [EVID, w1] Built a simple DCF or comparables model? A. Yes, end to end [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-B4 [ROLE, w1] Can you name a recent deal in a sector you follow? A. Yes, with key terms [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-B5 [TECH, w1, K] Enterprise value is 1,000 and net debt is 300. Equity value? A. 700 [HIGH]  B. 1,300 [NONE]  C. 1,000 [NONE]
+ D-B6 [TECH, w1, K] Which is a standard way to value a mature, steady company? A. Discounted cash flow plus trading comparables [HIGH]  B. Last year's profit alone [LOW]  C. Number of employees [NONE]
+GENERIC:
+ D-G1 [routing, not scored] Which best describes your role's core work? A. Analysis and models [ANALYTIC]  B. Clients and relationships [CLIENT]  C. Building or launching things [BUILD]  D. Running processes or teams [OPS_PEOPLE]. Used to choose examples in the plan.
+ D-G2 [EVID, w1] Have you completed a real work sample for this role (model, campaign plan, dashboard, case, plan or code)? A. Yes, complete [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-G3 [ROLE, w1] Can you name the 3 measures a person in this role is judged on, and why? A. Yes, with reasons [HIGH]  B. Partly [MED]  C. No [NONE]
+ D-G4 [PRACT, w1] Role-specific interview or test practice rounds done: A. Five or more [HIGH]  B. One to four [MED]  C. None [NONE]
+ D-G5 [ROLE, w1] Can you describe how AI tools are used in this role today? A. Yes, with examples [HIGH]  B. Partly [MED]  C. No [NONE]
+ For GENERIC, TECH is "Not assessed" (we cannot test role-specific technical knowledge). Show: "We can't test role-specific technical knowledge for this role. Ask a mentor or alumnus to run a technical check."
+
+ADAPTIVE INSERTS (not scored; each has the escape button)
+ D-AD1: if D-C1 is LOW, ask right after it: "What has stopped you from learning more about this role?" A. Not enough time [BLK_TIME]  B. I don't know who to ask [BLK_ACCESS]  C. I'm not sure this role is right for me [BLK_FIT]  D. I don't know where to start [BLK_START]. If BLK_FIT, add a report note: "Consider the Specialization or Role Shortlist tracks to compare other roles before investing 90 days."
+ D-AD2: if D-C2 is NONE, ask after it: "Could you complete one role-related project in the next 30 days?" A. Yes, I know what I'd do [PROJ_YES]  B. Yes, but I need ideas [PROJ_IDEAS]  C. No, I don't have time [PROJ_NO]. If PROJ_IDEAS, the plan lists 3 project ideas for the role. If PROJ_NO, state the Gap honestly and say the plan needs about 5 hours a week.
+ D-AD3: if level is LATERAL and D-L3 is LOW or NONE, ask after it: "If your current role improved, would you still want to switch?" A. Yes [SWITCH_YES]  B. Maybe [SWITCH_MAYBE]  C. No [SWITCH_NO]. If MAYBE or NO, add: "Re-check your motivation before you start applying."
+ D-AD4: if D-C7 is URG_HIGH, use Sprint mode in the plan (no extra question).
+
+SCORING D
+- Dimension score = Σ(points × weight × calibration) ÷ Σ(weight × calibration) over answered, scored questions in that dimension. Not-sure answers (non-K) are excluded; the dimension is marked "Partly assessed". If a dimension has no scored answers it is "Not assessed" and excluded from the overall score.
+- Calibration multiplier: FRESHER: ROLE and EVID questions × 1.5. INTERN: EVID questions × 1.5. LATERAL: EVID questions × 1.5. All others × 1.
+- Overall weights (normalise over assessed dimensions):
+ FRESHER: ROLE 18, EVID 18, TECH 18, PRACT 14, NET 8, POS 14, AIF 10
+ INTERN:  ROLE 10, EVID 24, TECH 18, PRACT 14, NET 8, POS 16, AIF 10
+ LATERAL: ROLE 8,  EVID 28, TECH 18, PRACT 14, NET 8, POS 14, AIF 10
+- Status per dimension: Ready 70 and above; Close 50 to 69; Gap below 50. Overall: 70 and above "Interview-ready"; 50 to 69 "Close: targeted prep needed"; below 50 "Not yet: build the foundation first". Round to the nearest whole number.
+- Be honest. Do not soften a Gap. For every Gap or Close, name the specific action that closes it (Section 7 plan action library).
+- Readiness persona (fun framing, not a test): 70+ "The Prepared Pro: you have done the work, now sharpen and apply." 50 to 69 "The Contender: close, and a focused few weeks changes the outcome." Under 50 "The Underdog in Training: not there yet, and that's fine. This plan builds the foundation."
+- Role energy line: map the chosen role to an archetype (Product Manager→BU, Strategy Consultant→ST, IB Associate→AN, Financial Analyst→AN, Marketing or Brand Manager→PE, Digital Marketing Manager→PE, Business or Data Analyst→AN, HR or Talent Acquisition→CO, Operations or Supply Chain Manager→OP, Sales or Business Development Manager→PE, Management Trainee→ST, Another role→none). Show the avatar small with "Typical role energy: <archetype>".
+
+90-DAY PLAN
+- Ask (with defaults) for three weekly practice slots (default Mon, Wed, Fri evening) from a fixed choice list. Write every action as "If it is <slot>, then <action>".
+- Build from the 3 lowest assessed dimensions. Normal mode: Weeks 1 to 4 Foundation (lowest two dimensions), Weeks 5 to 8 Practice, Weeks 9 to 12 Apply and refine. Sprint mode (D-AD4): Weeks 1 to 2 Foundation, Weeks 3 to 4 Practice, Weeks 5 to 12 Apply and maintain, with weekly numeric targets × 1.5 (rounded up).
+- Every week has one measurable output and a tick box. Show a progress count ("5 of 12 weeks done"). Tick state is kept in memory only.
+- Action library (resource types only; never invent named sources):
+ ROLE: read 3 real job descriptions and list the 5 most repeated tasks; talk to 1 person in the role; write a one-page "a week in this role" note and get it checked by that person.
+ EVID: PM: write a mini product requirement document for an app you use. SC: solve and write up one full case. IB: build a simple DCF and comparables sheet for a listed company. Generic: complete one work sample for the role. INTERN: ask your manager to let you own one deliverable and request written feedback. LATERAL: write 3 impact stories with numbers. If PROJ_IDEAS: list 3 project ideas for the role.
+ TECH: PM: 3 product-sense drills and 2 metrics drills a week. SC: 3 cases a week plus 15 minutes of daily mental math. IB: 4 accounting and valuation sessions a week plus one deal summary a week. Generic: answer 20 core role questions aloud, timed.
+ PRACT: 1 mock interview a week (Foundation), 2 a week (Practice and Apply); record, review, log one fix per mock.
+ NET: send 5 outreach messages a week; book 2 calls a week; ask each person for one referral or one next contact.
+ POS: tailor the resume with 3 quantified bullets; write a 60-second pitch; write a "why this role, why now" story; get a peer review.
+ AIF: use an AI tool on one real task a week and write down what you checked and what it got wrong; build one small piece of work using AI and be ready to explain how you verified it.
+ APPLY: Fresher 8 applications a week; Intern 5 plus a conversion conversation with your manager; Lateral 6 plus referrals. Review the feedback log weekly.
+
+SECTION 8: REPORTS (all tracks)
+8.1 Layout: a "Your result in 20 seconds" summary card at the top (archetype avatar, one-line result, top recommendations, confidence label). Below it, sections as expandable cards (all open on desktop, first two open on mobile) with a sticky section menu on desktop. Buttons: "Save as PDF" (window.print with a print stylesheet: expand all sections, hide buttons, black on white), "Copy summary" (plain text), "Edit answers" (back to the review screen), carry-over buttons (Section 1.7), "Start over".
+8.2 Common sections (order):
+ 1 Your snapshot: avatar(s), archetype name(s), character energy, tagline, strength, shadow side, works-best-when.
+ 2 Why you got this: the 2 or 3 answers that drove the result, in plain words (quote the chosen option text).
+ 3 What the work really looks like: "typical week" from the specialization or role content (Section 9.2, 9.4).
+ 4 What to expect: entry routes, the first 0 to 3 years, interview formats (from the track's own data).
+ 5 AI today in this field: from Section 9.2 (ai_now) plus the exposure badge.
+ 6 The next 3 to 5 years: from Section 9.2 (next) plus "skills rising" from the Market snapshot.
+ 7 Watch-outs: the archetype shadow side, the track's risk line, and the confidence note.
+ 8 Your first 30 days: three concrete actions from the track data.
+ 9 Compare alternatives: why the runner-up came second, in one sentence.
+ 10 Market snapshot (Section 9.1) and "Hiring in the AI era" (Section 9.3).
+ 11 Sources, "Last reviewed: October 2026", the disclaimer.
+8.3 Track-specific additions:
+ A: "Your pattern" bars for all six types (Strong, Moderate, Light); "Is an MBA right now?" note; Primary, Alternative and Stretch cards with a comparison table (typical week, AI exposure, first step); "Test before you commit" (talk to two alumni, one small project, one career-services session).
+ B: Primary and Secondary cards; dual verdict box (colour plus text label); "Course plan" (Next term: foundation course of the Primary; middle terms: electives that support the Secondary; final term: one applied project or internship in the Primary; add one analytics or AI-literacy elective if your college offers one); "Internship titles to search" (the ANALYTIC and CLIENT role titles of the Primary from Section 6).
+ C: three role cards (title, family blurb from Section 9.4, one-line reason); fallback; interview rubric with 1 to 5 bars and practice actions; salary research guide; "Skills to build"; the specialization profile (Section 9.2).
+ D: readiness hero (overall score, verdict, persona); seven dimension cards (status label, plain explanation, closing action); "Role anatomy" (Section 9.5); honest-gaps list; adaptive notes; the 90-day plan with tick boxes.
+8.4 AI exposure badge (text + icon, never colour only): "Exposure of entry-level tasks to AI: Low (most entry tasks need local judgement or relationships), Medium (some tasks are automated, human review remains), High (many routine entry tasks are automated, so the junior role shifts to checking, judgement and communication)". State that these labels are qualitative judgements, not statistics.
+8.5 Footer on every report: "This is guidance to help you think and plan, not a guarantee. Salary information is indicative. Character references are for fun and not affiliated with any film studio. Check your college's career services and current placement reports for program-specific details."
+
+SECTION 9: REPORT CONTENT DATA (store in data/content.js; edit later without touching code)
+9.1 Market snapshot (global and US sources; India-specific numbers are not included, so students should check their own college's placement reports). Show source name and date next to each, with "Verify at source".
+ - World Economic Forum, Future of Jobs Report 2025 (January 2025): employers expect about 170 million new jobs and 92 million displaced by 2030, a net gain of about 78 million; about 22% of jobs are expected to be disrupted; AI and big data, networks and cybersecurity, and technological literacy are projected as the fastest-growing skills; analytical thinking, resilience, leadership and collaboration remain core.
+ - Cornell research, working paper on AI and MBA hiring (Spring 2026), based on interviews at 30 organisations: employers are automating entry-level work once done by MBA graduates and expect new roles such as AI risk and compliance, AI transformation and AI product management.
+ - PwC 2026 Global AI Jobs Barometer (as summarised by a business school, 2026): entry-level roles highly exposed to AI are far more likely to demand senior-style skills such as judgement, leadership and communication.
+ - PwC survey of US financial services executives (reported August 2026): most said AI training is more valuable than an MBA for many new hires, and most are raising pay for AI skills. US finance only.
+9.3 Hiring in the AI era (show on C and D reports; no statistics):
+ - Some employers screen CVs with software (ATS), so use the role's own words from the job post (truthfully), a simple layout and quantified results.
+ - Expect to be asked how you use AI tools and how you check their output.
+ - Entry-level work is shifting from producing first drafts to checking, judging and explaining, so practise explaining your reasoning aloud.
+ - Show proof of work (a case, model, campaign plan or dashboard) rather than only listing skills.
+9.2 Specialization profiles. Fields: week | ai_now | next | exposure.
+FIN: Build and update financial models, review company numbers, prepare reports for decisions. | Drafts models, summarises filings and flags errors; people check and decide. | Routine modelling shrinks; judgement, deal sense and AI-checking matter more. | High
+BNK: Assess credit and insurance risk, support customers, check compliance, prepare approvals. | Scores applications, spots fraud, automates paperwork; staff handle exceptions and relationships. | More automated underwriting; roles shift to risk oversight, AI governance and complex cases. | High
+FTC: Work on payments, lending or wallet products with tech, risk and compliance teams. | Fraud detection, credit scoring and support bots are common. | Growth in product, risk and regulation roles around AI-driven finance. | Medium
+ANA: Clean data, build dashboards, answer business questions, present findings. | Writes queries and code, drafts charts and summaries; analysts frame questions and check results. | Basic reporting is automated; value moves to framing questions, data quality and decisions. | High
+DSA: Build and test models with data teams and explain results to managers. | Code assistants speed up modelling; business context and evaluation still need people. | Demand for people who can deploy, test and govern AI in business stays strong; WEF lists AI and big data among the fastest-growing skills. | Medium
+STR: Structure client problems, analyse data, build slides, present options to leaders. | Drafts slides, research summaries and first-pass analysis; juniors do more review and synthesis. | Entry work becomes more senior: judgement, communication and AI-supported analysis. | High
+INT: Plan market entry, work with partners and regulations across countries. | Translation, trade-data analysis and compliance checks are automated; relationships and local judgement are not. | Rules and supply chains keep shifting, so adaptable cross-border specialists stay valuable. | Medium
+GEN: Rotate across functions, coordinate teams, track budgets and results. | Reports, meeting notes and dashboards are increasingly automated. | Leaders who manage people plus AI-enabled processes gain value. | Medium
+PM: Talk to users, decide what to build, work with engineers and designers, track metrics. | Drafts specs, summarises feedback and analyses usage; prioritisation and trade-offs stay human. | AI product management is named among new MBA-level roles in recent research. | Medium
+ENT: Test ideas with customers, sell, raise money, do whatever the business needs. | Lowers the cost of prototypes, content and market analysis. | Easier to start and harder to stand out; customer insight and execution matter more. | Medium
+FAM: Learn each part of the family firm, support expansion, professionalise processes. | Accounting, inventory and marketing tools are cheaper to adopt. | Firms that modernise with data and AI gain an edge; succession and trust remain human issues. | Medium
+MKT: Study customers, plan campaigns, manage the brand, work with agencies and sales. | Drafts copy and visuals, tests variations, reads campaign data. | Brand judgement, strategy and AI-tool fluency rise; execution tasks shrink. | High
+DM: Run search, social and email campaigns, track results, adjust budgets. | Optimises bids, generates content variants and reports automatically. | Roles shift to strategy, analytics and managing AI tools. | High
+SAL: Find leads, meet clients, negotiate, close deals, report the pipeline. | Drafts outreach, scores leads, logs calls. | Trust-based selling and complex deals stay human; routine prospecting is automated. | Medium
+MED: Plan content, audiences, partnerships and events for media or sports brands. | Generates drafts, edits, recommendations and audience analytics. | Original ideas, rights and audience trust matter more as content becomes abundant. | High
+HR: Recruit, onboard, train, handle employee issues, run people reports. | Screens CVs, schedules interviews, drafts job descriptions, answers policy questions. | Roles shift to people analytics, AI governance and change management; human conversations stay central. | High
+HCM: Coordinate hospital operations, budgets, quality and patient flow. | Scheduling, billing and records tools are increasingly automated. | Managers who combine healthcare knowledge with data are likely to stay in demand. | Medium
+PHA: Support drug launches, regulatory submissions, supply and doctor engagement. | Speeds literature review, data analysis and document drafting. | Strict regulation keeps human sign-off essential; AI skills add speed. | Medium
+ESG: Collect sustainability data, prepare reports, advise teams on targets and rules. | Automates data collection and report drafts. | Environmental stewardship entered WEF's list of fastest-growing skills for the first time. | Medium
+HOS: Manage guest experience, pricing, staff rosters and events. | Dynamic pricing, booking bots and demand forecasting. | Personalised service gets AI support; human hospitality remains the product. | Medium
+PPN: Design and monitor programmes, work with government and donors, write reports. | Helps with research, translation, data analysis and grant drafts. | Impact measurement and responsible AI use become core skills. | Medium
+OPS: Track production or service performance, fix bottlenecks, manage quality and vendors. | Predicts breakdowns, optimises schedules, monitors quality. | Managers who can run data-driven, automated operations grow in value. | Medium
+SCM: Plan demand, manage suppliers and logistics, solve delays. | Forecasts demand, plans routes, flags disruption risks. | Resilience planning and supplier relationships stay human; planning tasks automate. | Medium
+ITM: Choose and roll out systems, manage vendors, security and users. | Code and support automation; security tools use AI. | WEF lists networks and cybersecurity and technological literacy among the top growing skills. | Medium
+PRJ: Plan scope, schedule, budget and risks; run meetings; keep stakeholders aligned. | Drafts plans, status reports, risk logs and meeting notes. | Value moves to stakeholder handling and delivering AI-enabled projects. | Medium
+RET: Plan product ranges, pricing, stock, online listings and promotions. | Demand forecasting, pricing, recommendations and chat support. | Roles blend merchandising with data and marketplace skills. | High
+AGR: Link farmers to markets, manage procurement, storage, pricing and inputs. | Weather, price and crop-monitoring tools are spreading. | Technology adoption varies widely by region; ground relationships stay essential. | Low
+REI: Evaluate sites, manage construction schedules and costs, deal with buyers and regulators. | Valuation tools, design and scheduling software, document review. | Local knowledge, approvals and negotiation stay human; analysis tools improve. | Low
+9.4 Role-family blurbs (Track C role cards). Fields: day | ai_now | next | human edge.
+ANALYTIC: You spend most time with data, models and reports. | First-pass analysis and drafting are increasingly done by AI tools. | Value moves to asking the right question, checking AI output and explaining results. | Judgement and clear explanation.
+CLIENT: You spend most time with clients, customers or partners. | AI drafts outreach, logs calls and scores leads. | Trust and complex negotiation grow in value; routine contact is automated. | Relationships and trust.
+BUILD: You spend most time launching new products, campaigns or programmes. | AI speeds up prototypes, drafts and testing. | Taste, prioritisation and customer insight matter more than output volume. | Judgement about what is worth building.
+OPS_PEOPLE: You spend most time keeping processes or teams running. | AI helps with scheduling, monitoring and reporting. | People who can run AI-enabled processes and lead teams through change gain value. | Leadership and reliability.
+9.5 Role anatomy (Track D). Fields: daily | rounds | ai_in_role.
+Product Manager: Talk to users, write requirements, prioritise, work with engineers and designers, check metrics. | Product sense, metrics, execution and prioritisation, behavioural, sometimes a case or take-home. | Drafts specs and summarises feedback; you decide what to build and why.
+Strategy Consultant: Structure problems, analyse data, build slides, present to clients. | Case interviews (market sizing, profitability, entry), fit and behavioural, a senior round. | Drafts slides and research; you synthesise and persuade.
+IB Associate: Build models, value companies, prepare pitch books, manage analysts, talk to clients. | Technical (accounting, valuation, deals), fit, market awareness, sometimes a modelling test. | Speeds up models and decks; you check numbers and manage clients.
+Financial Analyst: Budgets, forecasts, variance reports, business partnering. | Technical (accounting, spreadsheets), scenario questions, behavioural. | Automates routine reports; you explain the numbers.
+Marketing or Brand Manager: Campaign plans, brand health, agencies, budgets. | A case on a brand problem, a review of past campaigns, behavioural. | Drafts content and tests variations; you set the brand direction.
+Digital Marketing Manager: Run channels, track performance, optimise budgets and content. | Channel and analytics questions, a campaign audit or tool test, behavioural. | Automates bidding and reporting; you set strategy and check quality.
+Business or Data Analyst: Pull and clean data, build dashboards, give insights to managers. | A spreadsheet or SQL test, a business case, behavioural. | Writes queries and drafts charts; you frame questions and check results.
+HR or Talent Acquisition: Source, screen, interview, onboard, answer employee questions. | Situational HR cases, behavioural, candidate-handling role-play. | Screens CVs and schedules; you assess people and build trust.
+Operations or Supply Chain Manager: Plan, monitor, fix bottlenecks, manage vendors and quality. | Process and case problems, a quantitative test, behavioural. | Forecasts and flags risks; you solve problems and manage people.
+Sales or Business Development Manager: Prospect, pitch, negotiate, report the pipeline. | Role-play, a target and pipeline discussion, behavioural. | Drafts outreach and logs calls; you build trust and close.
+Management Trainee (General): Rotate across functions, work on projects, prepare reports. | Aptitude test, group discussion, case or interview. | Automates reports and notes; you show adaptability and communication.
+Another role: Check 3 real job descriptions for daily tasks and interview steps. | Ask the employer or alumni about the process. | Ask how AI tools are used in this role today.
+9.6 Archetype risk and next-step lines are in Section 3.2.
+
+SECTION 10: SELF-TEST PAGE (#selftest) AND ACCEPTANCE CRITERIA
+Build a page at #selftest that calls the pure engine functions on scripted answer sets and shows a PASS/FAIL table. Before replying, run the app, open #selftest, walk through all four flows once by hand, fix every failure, and re-run until all tests pass.
+
+Tests (expected values are exact unless stated):
+T-A1 (analyst). A-Q1 D, Q2 D, Q3 D, Q4 A, Q5 A, Q6 A, Q7 A, Q8 A, Q9 A, Q10 A, Q11 A, Q12 A; follow-ups A-F1 D, A-F2 D. Expect typeScore AN 8, OP 3, ST 1, others 0; archetype AN; Primary ANA (25); Alternative OPS (14); Stretch STR (10).
+T-A2 (persuader, digital, not-sure). A-Q1 B, Q2 not sure, Q3 C, Q4 C, Q5 B, Q6 not sure, Q7 C, Q8 C, Q9 C, Q10 C, Q11 not sure, Q12 not sure; follow-ups PF1 B, PF2 B. Expect PE 8, digCount 2; Primary DM (24); Alternative RET (10); Stretch ENT (8); confidence label "Lower confidence" (4 not-sure answers).
+T-A3 (multi-select split). A-Q8 with options A and C both chosen. Expect AN +0.5, PE +0.5, DIG +0.5 (not 1 each).
+T-A4 (tie order). Equal AN and ST scores resolve to AN (order AN, ST, BU, PE, CO, OP).
+T-B1. B-Q1 A, Q2 A, Q3 B, Q4 A, Q5 B, Q6 B, Q7 C, Q8 A, Q9 A, Q10 A. Expect FIN 14, BNK 7, FTC 3, ANA 3 (rank 4), INT 2, SCM 2; Primary FIN, Secondary BNK; pair FIN+ANA = STRONG; verdict "Workable with caution".
+T-B2. B-Q10 E. Expect the "college doesn't offer dual specialization" verdict.
+T-B3. Reach each verdict branch (not offered, ready-low, single, strong, strong with caution, stretch via Q9 F, no pair via escape) and confirm each text.
+T-C1. Specialization FIN; C-Q1 B, C-Q3 B, C-Q2 two items, C-Q5 CAMPUS_ACTIVE, C-Q6 TIER_FIRM, C-Q8 MOCK_1, C-Q9 GAP_CASE, C-Q10 URG_MED. Expect CLIENT 4; roles: Investment Banking Analyst, FP&A or Financial Analyst, Corporate Finance or Treasury Associate; campus fallback Credit and Risk Operations Associate; rubric Technical 3, Case 1, Behavioural 2, Group discussion 2.
+T-C2. Same as T-C1 with C-Q5 OFF_CAMPUS. Expect the heading "Off-campus fallback".
+T-C3. Step 0 "My area isn't listed" → group Marketing, Sales and Media → closest DM, with note "performance marketing". Expect DM used, and the report shows the note.
+T-D1 (perfect). Fresher, Product Manager, every best answer. Expect every dimension 100, overall 100, "Interview-ready".
+T-D2 (worst). Fresher, Product Manager: C1 C, C2 D, C3 D, C4 C, C5 C, C6 D, C9 D, C10 C, F1 A (None), F2 C, F3 C, P1 C, P2 C, P3 C, P4 C, P5 C, P6 C. Expect ROLE 20, EVID 5, TECH 0, PRACT 20, NET 0, POS 15, AIF 0; overall 9 (plus or minus 1); all Gap; "Not yet".
+T-D3 (not-sure exclusion). Same as T-D1 but D-C2 "Not sure". Expect EVID 100 with a "Partly assessed" label; overall 100.
+T-D4 (knowledge not-sure). D-P1 "Not sure". Expect it to score 30 in TECH (K rule).
+T-D5 (Sprint). D-C7 A (under 4 weeks). Expect Sprint mode and weekly targets × 1.5, rounded up.
+T-D6 (adaptive). D-C1 C inserts AD1; D-C2 D inserts AD2; Lateral with D-L3 C inserts AD3; none of them appear otherwise.
+T-D7 (generic). Role "Marketing or Brand Manager": expect the GENERIC block, D-G1 asked, TECH shown as "Not assessed" with the mentor-check line, and the overall score computed over the other six dimensions.
+T-N1. Back on question 1 returns to the card screen. T-N2. Change track, then choose the card again: the answers are restored and the button reads "Resume". T-N3. Review screen Edit returns directly to the review screen after Next. T-N4. Each carry-over button opens the right track with the value pre-filled.
+T-F1 (free tier). Full runs of A, B, C and D make zero network requests (count fetch and XHR calls = 0). T-F2: no use of localStorage, sessionStorage, cookies or IndexedDB (assert the objects are not accessed).
+T-S1 (security). A note typed as "<script>alert(1)</script>" is shown as plain text and runs nothing.
+
+Acceptance criteria (all must be true before delivery):
+AC-01 The entry screen still shows four cards in the existing style; the selected card shows SELECTED and the correct button label; card texts show the new question counts.
+AC-02 Every question has the right answer-mode chip, letter-badged option cards and the "None of these fit / Not sure" button; Next is disabled until an answer is chosen.
+AC-03 Multi-select questions cap at 2 where marked, and the weight is split as in Section 2.5.
+AC-04 No free-text input exists except the step-0 search filter and the optional note box.
+AC-05 Back works on every screen; Change track keeps answers per track; Review screen Edit works; Start Over clears everything after a confirm.
+AC-06 Track A: T-A1 to T-A4 pass; the report shows archetype and blend, character avatar(s), "Your pattern" bars, Primary, Alternative and Stretch, the MBA timing note and all common sections.
+AC-07 Track B: T-B1 to T-B3 pass; every verdict branch is reachable and shows the correct text.
+AC-08 Track C: T-C1 to T-C3 pass; three roles, fallback, rubric, skills to build, salary guidance with no invented numbers.
+AC-09 Track D: T-D1 to T-D7 pass; seven dimension cards show Ready, Close, Gap, Partly assessed or Not assessed; the 90-day plan has tick boxes and a measurable weekly output.
+AC-10 Every report has all common sections, the AI exposure badge (text plus icon), the Market snapshot with source names and dates, "Last reviewed: October 2026", the confidence label and the footer disclaimer.
+AC-11 "Save as PDF" prints a clean, fully expanded report; "Copy summary" copies plain text.
+AC-12 The six avatars render sharply at 120px and 160px, in light and dark surroundings.
+AC-13 No output contains invented book titles, URLs, company names, statistics or salary numbers.
+AC-14 Free tier and privacy: T-F1, T-F2 and T-S1 pass; no API key in the code; no console errors in any flow.
+AC-15 360px layout works; keyboard-only navigation works; focus is visible; colour is never the only signal.
+AC-16 #selftest shows all tests PASS.
+
+DELIVERY
+When finished, reply with: (1) the final PASS/FAIL table from #selftest, (2) any deviations from this prompt and why, (3) the list of data files I can edit to change questions, the specialization catalog and the report text without touching code.

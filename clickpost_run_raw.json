@@ -1,0 +1,613 @@
+{
+  "resumeFirst200": "CONTACT\nAbhinav Sarkar\nAssociate Product Manager abhinavsarkar121@gmail.com\n9630435371\nPROFESSIONAL SUMMARY Bengaluru, Karnataka\nAssociate Product Manager with 3 years in B2B digital products and tele",
+  "jdFirst200": "Associate Product Manager\nCompany: ClickPost\nLocation: Gurugram / Remote\n\nAbout ClickPost:\nClickPost is Asia's fastest-growing Logistics Intelligence Platform, partnering with 300+ enterprise retailer",
+  "result": {
+    "version": "ats-v2",
+    "readinessScore": 81,
+    "jobMatchScore": 46,
+    "matchedKeywords": [
+      "bachelor's",
+      "product",
+      "qa",
+      "uat",
+      "agile",
+      "manager",
+      "jira",
+      "management",
+      "defect",
+      "technical",
+      "analysis",
+      "coordination"
+    ],
+    "missingKeywords": [
+      "sql",
+      "engineering",
+      "apis",
+      "postman",
+      "b.e",
+      "relational database",
+      "logistics",
+      "rest",
+      "prds",
+      "sla",
+      "consulting",
+      "b.tech"
+    ],
+    "matchedKeywordGroups": {
+      "hard": [
+        "bachelor's",
+        "product",
+        "qa",
+        "uat",
+        "agile",
+        "manager",
+        "jira",
+        "management",
+        "defect",
+        "technical",
+        "analysis",
+        "coordination"
+      ],
+      "soft": [
+        "stakeholder management",
+        "communication",
+        "collaborate"
+      ]
+    },
+    "missingKeywordGroups": {
+      "hard": [
+        "sql",
+        "engineering",
+        "apis",
+        "postman",
+        "b.e",
+        "relational database",
+        "logistics",
+        "rest",
+        "prds",
+        "sla",
+        "consulting",
+        "b.tech"
+      ],
+      "soft": []
+    },
+    "keywordCounts": {
+      "matched": 29,
+      "missing": 47
+    },
+    "parsingWarnings": [],
+    "strengths": [
+      "Recovered 932 words of text.",
+      "6 roles were recovered from the work history.",
+      "An email address was found.",
+      "The resume is 932 words, a reasonable length.",
+      "48% of content lines carry a number."
+    ],
+    "failedChecks": [
+      {
+        "id": "ats-v2.structure.experience",
+        "category": "structure",
+        "severity": "error",
+        "passed": false,
+        "evidence": "No experience section heading was found.",
+        "scoreImpact": 12,
+        "fix": "Add a heading reading 'Experience' above the work history."
+      },
+      {
+        "id": "ats-v2.structure.education",
+        "category": "structure",
+        "severity": "warning",
+        "passed": false,
+        "evidence": "No education section heading was found.",
+        "scoreImpact": 8,
+        "fix": "Add a heading reading 'Education' above the qualifications."
+      },
+      {
+        "id": "ats-v2.structure.skills",
+        "category": "structure",
+        "severity": "warning",
+        "passed": false,
+        "evidence": "No skills section heading was found.",
+        "scoreImpact": 8,
+        "fix": "Add a heading reading 'Skills' above the skills list."
+      }
+    ],
+    "prioritizedFixes": [
+      "Add a heading reading 'Experience' above the work history.",
+      "Add a heading reading 'Education' above the qualifications.",
+      "Add a heading reading 'Skills' above the skills list."
+    ],
+    "rules": [
+      {
+        "id": "ats-v2.parse.text",
+        "category": "parse",
+        "severity": "error",
+        "passed": true,
+        "evidence": "Recovered 932 words of text.",
+        "scoreImpact": 0,
+        "fix": "Save the resume as a text-based PDF rather than a scan or an image."
+      },
+      {
+        "id": "ats-v2.contact.email",
+        "category": "contact",
+        "severity": "error",
+        "passed": true,
+        "evidence": "An email address was found.",
+        "scoreImpact": 0,
+        "fix": "Add an email address at the top of the first page, as plain text in the body rather than in a page header."
+      },
+      {
+        "id": "ats-v2.contact.position",
+        "category": "contact",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "Contact details appear near the top of the document.",
+        "scoreImpact": 0,
+        "fix": "Put the email address and phone number at the top of the first page, in the body of the document rather than in a page header, which many ATS parsers skip."
+      },
+      {
+        "id": "ats-v2.structure.experience",
+        "category": "structure",
+        "severity": "error",
+        "passed": false,
+        "evidence": "No experience section heading was found.",
+        "scoreImpact": 12,
+        "fix": "Add a heading reading 'Experience' above the work history."
+      },
+      {
+        "id": "ats-v2.structure.education",
+        "category": "structure",
+        "severity": "warning",
+        "passed": false,
+        "evidence": "No education section heading was found.",
+        "scoreImpact": 8,
+        "fix": "Add a heading reading 'Education' above the qualifications."
+      },
+      {
+        "id": "ats-v2.structure.skills",
+        "category": "structure",
+        "severity": "warning",
+        "passed": false,
+        "evidence": "No skills section heading was found.",
+        "scoreImpact": 8,
+        "fix": "Add a heading reading 'Skills' above the skills list."
+      },
+      {
+        "id": "ats-v2.format.length",
+        "category": "format",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "The resume is 932 words, a reasonable length.",
+        "scoreImpact": 0,
+        "fix": "Keep the resume between about 200 and 1,500 words: one or two pages."
+      },
+      {
+        "id": "ats-v2.format.letterSpacing",
+        "category": "format",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "Headings extract as whole words.",
+        "scoreImpact": 0,
+        "fix": "Remove the letter spacing (tracking) from section headings so they extract as words."
+      },
+      {
+        "id": "ats-v2.content.metrics",
+        "category": "content",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "48% of content lines carry a number.",
+        "scoreImpact": 0,
+        "fix": "Quantify outcomes: amounts, percentages, timeframes, headcounts."
+      },
+      {
+        "id": "ats-v2.content.verbs",
+        "category": "content",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "54% of bullets name an action you took.",
+        "scoreImpact": 0,
+        "fix": "Make each bullet say what you did, with an action word (\"Led\", \"Built\", \"Cut\"), rather than what the job was."
+      },
+      {
+        "id": "ats-v2.content.buzzwords",
+        "category": "content",
+        "severity": "info",
+        "passed": true,
+        "evidence": "Little filler language.",
+        "scoreImpact": 0,
+        "fix": "Replace filler phrases with a specific thing you did."
+      },
+      {
+        "id": "ats-v2.content.timeline",
+        "category": "content",
+        "severity": "info",
+        "passed": true,
+        "evidence": "The dates in the work history are consistent.",
+        "scoreImpact": 0,
+        "fix": "Check the dates: a role cannot start after today, and an end date left off makes jobs overlap."
+      },
+      {
+        "id": "ats-v2.integrity.promptInjection",
+        "category": "integrity",
+        "severity": "error",
+        "passed": true,
+        "evidence": "No instructions aimed at an AI screener.",
+        "scoreImpact": 0,
+        "fix": "Remove it. Recruiters and screening tools treat instructions to an AI as manipulation, and many reject the application on sight."
+      },
+      {
+        "id": "ats-v2.integrity.copiedPosting",
+        "category": "integrity",
+        "severity": "error",
+        "passed": true,
+        "evidence": "The resume is not a copy of the posting.",
+        "scoreImpact": 0,
+        "fix": "Describe your own experience. A pasted posting is caught the moment a recruiter reads the resume."
+      },
+      {
+        "id": "ats-v2.integrity.invisibleCharacters",
+        "category": "integrity",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "No invisible characters.",
+        "scoreImpact": 0,
+        "fix": "Remove zero-width and other invisible characters; retype any word they split."
+      },
+      {
+        "id": "ats-v2.integrity.homoglyphs",
+        "category": "integrity",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "No look-alike letters from other alphabets.",
+        "scoreImpact": 0,
+        "fix": "Retype those words: they look right but no search matches them."
+      },
+      {
+        "id": "ats-v2.integrity.keywordStuffing",
+        "category": "integrity",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "No keyword stuffing.",
+        "scoreImpact": 0,
+        "fix": "Name each skill where you used it. Repetition does not raise a match score in a modern ATS, and recruiters read it as stuffing."
+      },
+      {
+        "id": "ats-v2.parse.roles",
+        "category": "parse",
+        "severity": "error",
+        "passed": true,
+        "evidence": "6 roles were recovered from the work history.",
+        "scoreImpact": 0,
+        "fix": "Give each job a line with the title, the employer, and a date range."
+      },
+      {
+        "id": "ats-v2.parse.roleCompleteness",
+        "category": "parse",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "67% of recovered roles have a title, an employer and a start date.",
+        "scoreImpact": 0,
+        "fix": "Make sure every job lists a title, an employer, and a date range."
+      },
+      {
+        "id": "ats-v2.parse.contact",
+        "category": "parse",
+        "severity": "warning",
+        "passed": true,
+        "evidence": "67% of the expected contact fields were recovered.",
+        "scoreImpact": 0,
+        "fix": "Include a name, an email address, and a phone number as plain text."
+      },
+      {
+        "id": "ats-v2.privacy.dateOfBirth",
+        "category": "contact",
+        "severity": "info",
+        "passed": true,
+        "evidence": "No date of birth is stated.",
+        "scoreImpact": 0,
+        "fix": "Leave your date of birth off unless the country you are applying in expects it."
+      }
+    ],
+    "categories": [
+      {
+        "category": "parse",
+        "score": 100,
+        "passed": 4,
+        "total": 4,
+        "lost": 0,
+        "possible": 53
+      },
+      {
+        "category": "contact",
+        "score": 100,
+        "passed": 3,
+        "total": 3,
+        "lost": 0,
+        "possible": 20
+      },
+      {
+        "category": "structure",
+        "score": 0,
+        "passed": 0,
+        "total": 3,
+        "lost": 28,
+        "possible": 28
+      },
+      {
+        "category": "format",
+        "score": 100,
+        "passed": 2,
+        "total": 2,
+        "lost": 0,
+        "possible": 18
+      },
+      {
+        "category": "content",
+        "score": 100,
+        "passed": 4,
+        "total": 4,
+        "lost": 0,
+        "possible": 26
+      },
+      {
+        "category": "integrity",
+        "score": 100,
+        "passed": 5,
+        "total": 5,
+        "lost": 0,
+        "possible": 85
+      }
+    ],
+    "checksPassed": 18,
+    "checksTotal": 21,
+    "wordCount": 932,
+    "parsed": {
+      "name": "Abhinav Sarkar",
+      "email": "abhinavsarkar121@gmail.com",
+      "phone": "",
+      "links": [
+        "https://www.linkedin.com/in/abhinav-sarkar-product-roadmapping"
+      ],
+      "roles": [
+        {
+          "start": {
+            "year": 2025,
+            "month": 1
+          },
+          "end": null,
+          "current": true,
+          "title": "Senior Product Management Consultant",
+          "employer": "Tecnotree Corporation, Product Backlog Management, Feature Prioritization"
+        },
+        {
+          "start": {
+            "year": 2024,
+            "month": 7
+          },
+          "end": {
+            "year": 2024,
+            "month": 12
+          },
+          "current": false,
+          "title": "Management Trainee",
+          "employer": "collaboration, and innovation"
+        },
+        {
+          "start": {
+            "year": 2022,
+            "month": null
+          },
+          "end": {
+            "year": 2024,
+            "month": null
+          },
+          "current": false,
+          "title": "Facilitated product demonstrations and supported product overview",
+          "employer": "training, and knowledge- MBA, Marketing transfer sessions across 3+ internal teams and stakeholders"
+        },
+        {
+          "start": {
+            "year": 2019,
+            "month": null
+          },
+          "end": {
+            "year": 2022,
+            "month": null
+          },
+          "current": false,
+          "title": "900+ employees with an estimated 40%+ open rate",
+          "employer": ""
+        },
+        {
+          "start": {
+            "year": 2024,
+            "month": 1
+          },
+          "end": {
+            "year": 2024,
+            "month": 7
+          },
+          "current": false,
+          "title": "Product Management Intern",
+          "employer": ""
+        },
+        {
+          "start": {
+            "year": 2019,
+            "month": 5
+          },
+          "end": {
+            "year": 2021,
+            "month": 8
+          },
+          "current": false,
+          "title": "Founder & CEO",
+          "employer": "Shoppz.co (D2C E-commerce)"
+        }
+      ],
+      "education": [
+        {
+          "school": "Sri Balaji University",
+          "credential": "MBA",
+          "isced": 7,
+          "end": {
+            "year": 2024,
+            "month": null
+          }
+        },
+        {
+          "school": "coordinating with technical writers on product updates and releases. Amity University",
+          "credential": "",
+          "isced": null,
+          "end": null
+        },
+        {
+          "school": "Founded and scaled a D2C customized apparel brand (t-shirts/shirts) from concept to launch while completing college full-time",
+          "credential": "",
+          "isced": null,
+          "end": null
+        }
+      ],
+      "skills": [],
+      "certifications": [],
+      "spokenLanguages": [],
+      "monthsOfExperience": 95,
+      "highestIsced": 7,
+      "provenance": {
+        "name": "parser",
+        "email": "parser",
+        "phone": "none",
+        "roles": "parser",
+        "education": "parser",
+        "skills": "none",
+        "certifications": "none",
+        "spokenLanguages": "none"
+      }
+    },
+    "locale": {
+      "languages": [],
+      "region": null,
+      "unsupported": null
+    },
+    "engine": {
+      "version": "0.22.0",
+      "policy": "ats-v2+6e295cb1"
+    },
+    "requirements": [
+      {
+        "text": "1–2 years of product management, technical analysis, or software consulting experience.",
+        "importance": "required",
+        "kind": "experience",
+        "status": "partial",
+        "terms": [
+          {
+            "term": "product",
+            "found": true
+          }
+        ],
+        "evidence": [
+          "Associate Product Manager with 3 years in B2B digital products and telecom, specializing in https://www.linkedin.com/in/abhinav-sarkar-product-roadmapping, back",
+          "(DAM) products. Skilled in JIRA, UAT, stakeholder management, and cross-functional delivery."
+        ],
+        "detail": "0 years in roles naming product, 1 asked"
+      },
+      {
+        "text": "Bachelor's in Engineering (B.E. / B.Tech) or equivalent technical degree.",
+        "importance": "required",
+        "kind": "education",
+        "status": "partial",
+        "terms": [
+          {
+            "term": "engineering",
+            "found": false
+          },
+          {
+            "term": "b.e",
+            "found": false
+          }
+        ],
+        "evidence": [],
+        "detail": "Master's or equivalent read; Bachelor's or equivalent asked"
+      },
+      {
+        "text": "Strong analytical mindset with hands-on proficiency in SQL and data extraction.",
+        "importance": "required",
+        "kind": "skills",
+        "status": "missing",
+        "terms": [
+          {
+            "term": "sql",
+            "found": false
+          }
+        ],
+        "evidence": []
+      },
+      {
+        "text": "Deep familiarity with APIs, Postman, and webhook architecture.",
+        "importance": "required",
+        "kind": "skills",
+        "status": "missing",
+        "terms": [
+          {
+            "term": "apis",
+            "found": false
+          },
+          {
+            "term": "postman",
+            "found": false
+          }
+        ],
+        "evidence": []
+      },
+      {
+        "text": "Experience in QA/UAT coordination, defect tracking, and Agile sprint execution.",
+        "importance": "required",
+        "kind": "skills",
+        "status": "met",
+        "terms": [
+          {
+            "term": "qa",
+            "found": true
+          },
+          {
+            "term": "uat",
+            "found": true
+          },
+          {
+            "term": "agile",
+            "found": true
+          }
+        ],
+        "evidence": [
+          "Associate Product Manager with 3 years in B2B digital products and telecom, specializing in https://www.linkedin.com/in/abhinav-sarkar-product-roadmapping, back",
+          "(DAM) products. Skilled in JIRA, UAT, stakeholder management, and cross-functional delivery."
+        ]
+      },
+      {
+        "text": "Excellent cross-functional communication and stakeholder management skills.",
+        "importance": "required",
+        "kind": "skills",
+        "status": "met",
+        "terms": [
+          {
+            "term": "stakeholder management",
+            "found": true
+          },
+          {
+            "term": "cross-functional",
+            "found": true
+          },
+          {
+            "term": "communication",
+            "found": true
+          }
+        ],
+        "evidence": [
+          "(DAM) products. Skilled in JIRA, UAT, stakeholder management, and cross-functional delivery.",
+          "Led the end-to-end Task Management revamp, enhancing Admin & Customer Portals with 2 Effort Estimation · Stakeholder Management · new portals, clickable KPI das"
+        ]
+      }
+    ],
+    "advice": []
+  }
+}
