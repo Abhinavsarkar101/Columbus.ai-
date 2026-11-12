@@ -242,13 +242,13 @@ export const EMPTY_RESUME_DATA: ResumeData = {
 };
 
 export const SAMPLE_MBA_RESUME: ResumeData = {
-  fullName: 'Abhinav Sarkar',
+  fullName: 'Alex Rivera',
   headline: 'MBA Candidate | Product & Strategy | Ex-Tech Lead',
-  email: 'abhinav.sarkar@alumni.iim.ac.in',
-  phone: '+91 98201 45678',
-  location: 'Bengaluru, India',
-  linkedinUrl: 'https://linkedin.com/in/abhinav-sarkar-mba',
-  githubOrPortfolio: 'https://github.com/abhinav-sarkar',
+  email: 'alex.rivera@alumni.mba.edu',
+  phone: '+1 (555) 234-5678',
+  location: 'San Francisco, CA',
+  linkedinUrl: 'https://linkedin.com/in/alex-rivera-mba',
+  githubOrPortfolio: 'https://github.com/alex-rivera',
   summary:
     'MBA candidate with 4+ years of cross-functional experience across software engineering, business analysis, and product strategy. Proven track record leading enterprise data platforms, defining roadmaps, and optimizing monetization unit economics. Seeking post-MBA Product Management or Strategy roles.',
   education: [

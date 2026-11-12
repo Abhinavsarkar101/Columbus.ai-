@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, LogOut, ShieldCheck, Mail, ChevronDown, LayoutDashboard, Globe, Trash2 } from 'lucide-react';
+import { User, LogOut, ShieldCheck, Mail, ChevronDown, LayoutDashboard, Trash2 } from 'lucide-react';
 
 interface AccountMenuProps {
   onNavigateTab?: (tab: string) => void;
@@ -71,16 +71,6 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({ onNavigateTab }) => {
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-[#00DF89]" />
                 <span>Go to Dashboard</span>
-              </button>
-              <button
-                onClick={() => {
-                  setDropdownOpen(false);
-                  onNavigateTab('landing');
-                }}
-                className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <Globe className="w-3.5 h-3.5 text-slate-400" />
-                <span>View Landing Page</span>
               </button>
             </div>
           )}

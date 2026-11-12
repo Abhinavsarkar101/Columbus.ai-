@@ -5,7 +5,7 @@ import { AuthModal } from './components/AuthModal';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { MigrationModal } from './components/MigrationModal';
 import { DeleteAccountModal } from './components/DeleteAccountModal';
-import { SAMPLE_MBA_RESUME, EMPTY_RESUME_DATA } from './lib/resume';
+import { EMPTY_RESUME_DATA } from './lib/resume';
 import { storageService } from './lib/storageService';
 import { Assess } from './pages/Assess';
 import { Company } from './pages/Company';
@@ -19,10 +19,14 @@ import { useAuth } from './context/AuthContext';
 import { ResumeData } from './types';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, openAuthModal } = useAuth();
 
   const getRouteFromHash = (): string => {
     const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+    // If user is not authenticated, ONLY allow landing page
+    if (!user) {
+      return 'landing';
+    }
     if (['landing', 'home', 'assess', 'resume', 'match', 'target', 'company', 'selftest'].includes(hash)) {
       return hash;
     }
@@ -32,7 +36,7 @@ function AppContent() {
   const [currentTab, setCurrentTab] = useState<string>(getRouteFromHash());
 
   // In-memory candidate resume data (persisted per user)
-  const [resumeData, setResumeData] = useState<ResumeData>(SAMPLE_MBA_RESUME);
+  const [resumeData, setResumeData] = useState<ResumeData>(EMPTY_RESUME_DATA);
 
   // Load user's saved resume when active user changes
   useEffect(() => {
@@ -53,7 +57,7 @@ function AppContent() {
           await storageService.saveUserResume(user.uid, cleanResume);
         }
       } else {
-        setResumeData(SAMPLE_MBA_RESUME);
+        setResumeData(EMPTY_RESUME_DATA);
       }
     }
     loadResume();
@@ -62,6 +66,34 @@ function AppContent() {
     };
   }, [user]);
 
+  // Enforce strict route protection: unauthenticated users cannot access in-app routes
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        if (currentTab !== 'landing') {
+          setCurrentTab('landing');
+        }
+        const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+        if (hash && hash !== 'landing') {
+          window.location.hash = '';
+        }
+      }
+    }
+  }, [user, loading, currentTab]);
+
+  const handleResetAllData = async () => {
+    if (user) {
+      await storageService.clearAllUserData(user.uid);
+      const cleanResume: ResumeData = {
+        ...EMPTY_RESUME_DATA,
+        fullName: user.displayName || user.email?.split('@')[0] || '',
+        email: user.email || '',
+      };
+      setResumeData(cleanResume);
+      await storageService.saveUserResume(user.uid, cleanResume);
+    }
+  };
+
   const handleUpdateResume = (updated: ResumeData) => {
     setResumeData(updated);
     if (user) {
@@ -69,22 +101,39 @@ function AppContent() {
     }
   };
 
-  // Listen to hash changes
+  // Listen to hash changes with strict authentication check
   useEffect(() => {
     const handleHashChange = () => {
+      const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+      if (['home', 'assess', 'resume', 'match', 'target', 'company', 'selftest'].includes(hash)) {
+        if (!user && !loading) {
+          setCurrentTab('landing');
+          window.location.hash = '';
+          openAuthModal('signin');
+          return;
+        }
+      }
       setCurrentTab(getRouteFromHash());
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [user, loading, openAuthModal]);
 
   const handleNavigate = (tab: string) => {
+    // If not logged in, block all dashboard and feature routes across mobile, tablet, and desktop
+    if (tab !== 'landing' && !user) {
+      setCurrentTab('landing');
+      window.location.hash = '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      openAuthModal('signin');
+      return;
+    }
     setCurrentTab(tab);
     window.location.hash = tab === 'landing' ? '' : `#${tab}`;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (currentTab === 'selftest') {
+  if (currentTab === 'selftest' && user) {
     return <SelfTestPage />;
   }
 
@@ -98,26 +147,27 @@ function AppContent() {
         hasAssessment={true}
       />
 
-      {/* Main Routed Page Content */}
+      {/* Main Routed Page Content - Strict Auth Gating */}
       <main className="flex-1">
-        {currentTab === 'landing' && (
+        {(!user || currentTab === 'landing') && (
           <Landing
             onNavigateTab={handleNavigate}
           />
         )}
 
-        {currentTab === 'home' && (
+        {user && currentTab === 'home' && (
           <Home
             resumeData={resumeData}
             onNavigateTab={handleNavigate}
+            onResetData={handleResetAllData}
           />
         )}
 
-        {currentTab === 'assess' && (
+        {user && currentTab === 'assess' && (
           <Assess />
         )}
 
-        {currentTab === 'resume' && (
+        {user && currentTab === 'resume' && (
           <ResumePage
             resumeData={resumeData}
             onUpdateResume={handleUpdateResume}
@@ -125,7 +175,7 @@ function AppContent() {
           />
         )}
 
-        {currentTab === 'match' && (
+        {user && currentTab === 'match' && (
           <Match
             resumeData={resumeData}
             onUpdateResume={handleUpdateResume}
@@ -133,21 +183,21 @@ function AppContent() {
           />
         )}
 
-        {currentTab === 'target' && (
+        {user && currentTab === 'target' && (
           <Target
             onNavigateTab={handleNavigate}
           />
         )}
 
-        {currentTab === 'company' && (
+        {user && currentTab === 'company' && (
           <Company
             onNavigateTab={handleNavigate}
           />
         )}
       </main>
 
-      {/* Global Minimal In-App Footer (shown when inside tools) */}
-      {currentTab !== 'landing' && (
+      {/* Global Minimal In-App Footer (shown ONLY when logged in and inside tools) */}
+      {user && currentTab !== 'landing' && (
         <footer className="py-4 border-t border-slate-800/80 bg-[#070B14] text-xs text-slate-500 no-print">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -173,4 +223,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-

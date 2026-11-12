@@ -944,7 +944,7 @@ export const ResumePage: React.FC<ResumePageProps> = ({
                         type="text"
                         value={resumeData.fullName}
                         onChange={(e) => handleFieldChange('fullName', e.target.value)}
-                        placeholder="e.g. Abhinav Sarkar"
+                        placeholder="e.g. Alex Rivera"
                         className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00DF89]"
                       />
                     </div>
