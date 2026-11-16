@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   auth,
-  googleProvider
+  googleProvider,
+  isFirebaseConfigured,
+  isFirebaseConfigError
 } from '../lib/firebaseClient';
 import {
   onAuthStateChanged,
@@ -12,8 +14,7 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification,
   updateProfile,
-  deleteUser,
-  User
+  deleteUser
 } from 'firebase/auth';
 import { isDisposableEmail } from '../lib/authPolicy';
 import { storageService } from '../lib/storageService';
@@ -31,6 +32,8 @@ interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
   isVerified: boolean;
+  isCloudAccount: boolean;
+  firebaseReady: boolean;
   authModalOpen: boolean;
   authModalMode: 'signin' | 'signup' | 'forgot';
   openAuthModal: (mode?: 'signin' | 'signup' | 'forgot') => void;
@@ -39,7 +42,7 @@ interface AuthContextType {
   signUpWithEmail: (email: string, pass: string, name?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, newPassword?: string) => Promise<void>;
   resendVerification: () => Promise<void>;
   verificationCooldown: number;
   migrationPromptOpen: boolean;
@@ -62,6 +65,14 @@ async function hashPassword(password: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function readLocalAccounts(): Record<string, any> {
+  try {
+    return JSON.parse(localStorage.getItem('compass_accounts') || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -74,6 +85,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    const restoreLocalSession = () => {
+      const storedLocal = localStorage.getItem('compass_active_user');
+      if (storedLocal) {
+        try {
+          setUser(JSON.parse(storedLocal));
+        } catch {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
+
+    if (!isFirebaseConfigured || !auth) {
+      restoreLocalSession();
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser({
@@ -93,18 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } else {
-        // Fallback to active local session if any
-        const storedLocal = localStorage.getItem('compass_active_user');
-        if (storedLocal) {
-          try {
-            setUser(JSON.parse(storedLocal));
-          } catch {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
+        restoreLocalSession();
       }
     });
     return () => unsubscribe();
@@ -156,11 +175,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return 'Too many attempts — try again later.';
       case 'auth/popup-closed-by-user':
         return 'Google sign-in was cancelled.';
+      case 'auth/popup-blocked':
+        return 'Popup was blocked by your browser. Please allow popups or sign in with Email & Password.';
+      case 'auth/unauthorized-domain':
+        return `This domain (${window.location.hostname}) is not authorized for Google Sign-In in Firebase Console. You can sign in using Email & Password above.`;
+      case 'auth/network-request-failed':
+        return 'Network error — please check your internet connection and try again.';
       case 'auth/weak-password':
         return 'Password is too weak. Please use at least 8 characters with letters and numbers.';
       default:
         return err?.message || 'An authentication error occurred. Please try again.';
     }
+  };
+
+  const localSignUp = async (cleanEmail: string, pass: string, name?: string) => {
+    const existingAccounts = readLocalAccounts();
+    if (existingAccounts[cleanEmail]) {
+      const msg = 'This email is already registered. Try signing in or resetting your password.';
+      setAuthError(msg);
+      throw new Error(msg);
+    }
+
+    const pwdHash = await hashPassword(pass);
+    const uid = 'usr_' + Math.random().toString(36).substring(2, 10);
+    const localUser: AppUser = {
+      uid,
+      email: cleanEmail,
+      displayName: name?.trim() || cleanEmail.split('@')[0],
+      emailVerified: true,
+      providerData: [{ providerId: 'password', email: cleanEmail }],
+    };
+
+    existingAccounts[cleanEmail] = {
+      ...localUser,
+      passwordHash: pwdHash,
+      createdAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem('compass_accounts', JSON.stringify(existingAccounts));
+    localStorage.setItem('compass_active_user', JSON.stringify(localUser));
+    setUser(localUser);
+
+    await storageService.resetUserDataOnSignup(uid, {
+      ...EMPTY_RESUME_DATA,
+      fullName: localUser.displayName || '',
+      email: cleanEmail,
+    });
+
+    setAuthNotice('Account created successfully! Welcome to Compass.');
+    closeAuthModal();
+    window.location.hash = '#home';
+  };
+
+  const localSignIn = async (cleanEmail: string, pass: string) => {
+    const existingAccounts = readLocalAccounts();
+    const account = existingAccounts[cleanEmail];
+    if (!account) {
+      const msg = 'No account found with this email address. Please sign up.';
+      setAuthError(msg);
+      throw new Error(msg);
+    }
+
+    const pwdHash = await hashPassword(pass);
+    if (account.passwordHash !== pwdHash) {
+      const msg = 'Incorrect password or email. Please check your credentials.';
+      setAuthError(msg);
+      throw new Error(msg);
+    }
+
+    const localUser: AppUser = {
+      uid: account.uid,
+      email: account.email,
+      displayName: account.displayName,
+      emailVerified: true,
+      providerData: [{ providerId: 'password', email: account.email }],
+    };
+
+    localStorage.setItem('compass_active_user', JSON.stringify(localUser));
+    setUser(localUser);
+    closeAuthModal();
+    window.location.hash = '#home';
   };
 
   const signUpWithEmail = async (email: string, pass: string, name?: string) => {
@@ -169,9 +263,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isDisposableEmail(cleanEmail)) {
       throw new Error('Please use a permanent email address — temporary email services aren\'t supported.');
     }
-    // Password validation rule check
     if (pass.length < 8 || !/[a-zA-Z]/.test(pass) || !/[0-9]/.test(pass)) {
       throw new Error('Password must be at least 8 characters and include at least one letter and one number.');
+    }
+
+    if (!isFirebaseConfigured || !auth) {
+      await localSignUp(cleanEmail, pass, name);
+      return;
     }
 
     try {
@@ -184,7 +282,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await sendEmailVerification(cred.user);
         } catch {}
       }
-      // Reset info inside Resume Studio, Job Match, and Assessment by default on signup
       await storageService.resetUserDataOnSignup(cred.user.uid, {
         ...EMPTY_RESUME_DATA,
         fullName: name || cleanEmail.split('@')[0],
@@ -195,45 +292,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       closeAuthModal();
       window.location.hash = '#home';
     } catch (err: any) {
-      // If Firebase project has not enabled Email/Password provider in Console, gracefully fall back
-      if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('operation-not-allowed')) {
-        const existingAccounts = JSON.parse(localStorage.getItem('compass_accounts') || '{}');
-        if (existingAccounts[cleanEmail]) {
-          const msg = 'This email is already registered. Try signing in or resetting your password.';
-          setAuthError(msg);
-          throw new Error(msg);
-        }
-
-        const pwdHash = await hashPassword(pass);
-        const uid = 'usr_' + Math.random().toString(36).substring(2, 10);
-        const localUser: AppUser = {
-          uid,
-          email: cleanEmail,
-          displayName: name || cleanEmail.split('@')[0],
-          emailVerified: true,
-          providerData: [{ providerId: 'password', email: cleanEmail }],
-        };
-
-        existingAccounts[cleanEmail] = {
-          ...localUser,
-          passwordHash: pwdHash,
-          createdAt: new Date().toISOString(),
-        };
-
-        localStorage.setItem('compass_accounts', JSON.stringify(existingAccounts));
-        localStorage.setItem('compass_active_user', JSON.stringify(localUser));
-        setUser(localUser);
-
-        // Reset info inside Resume Studio, Job Match, and Assessment by default on signup
-        await storageService.resetUserDataOnSignup(uid, {
-          ...EMPTY_RESUME_DATA,
-          fullName: name || cleanEmail.split('@')[0],
-          email: cleanEmail,
-        });
-
-        setAuthNotice('Account created successfully! Welcome to Compass.');
-        closeAuthModal();
-        window.location.hash = '#home';
+      if (isFirebaseConfigError(err)) {
+        await localSignUp(cleanEmail, pass, name);
         return;
       }
 
@@ -246,41 +306,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithEmail = async (email: string, pass: string) => {
     clearAuthMessages();
     const cleanEmail = email.trim().toLowerCase();
+
+    if (!isFirebaseConfigured || !auth) {
+      await localSignIn(cleanEmail, pass);
+      return;
+    }
+
     try {
       await signInWithEmailAndPassword(auth, cleanEmail, pass);
       closeAuthModal();
       window.location.hash = '#home';
     } catch (err: any) {
-      // If Email/Password provider is disabled in Firebase, verify against local accounts
-      if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('operation-not-allowed')) {
-        const existingAccounts = JSON.parse(localStorage.getItem('compass_accounts') || '{}');
-        const account = existingAccounts[cleanEmail];
-        if (!account) {
-          const msg = 'No account found with this email address. Please sign up.';
-          setAuthError(msg);
-          throw new Error(msg);
-        }
-
-        const pwdHash = await hashPassword(pass);
-        if (account.passwordHash !== pwdHash) {
-          const msg = 'Incorrect password or email. Please check your credentials.';
-          setAuthError(msg);
-          throw new Error(msg);
-        }
-
-        const localUser: AppUser = {
-          uid: account.uid,
-          email: account.email,
-          displayName: account.displayName,
-          emailVerified: true,
-          providerData: [{ providerId: 'password', email: account.email }],
-        };
-
-        localStorage.setItem('compass_active_user', JSON.stringify(localUser));
-        setUser(localUser);
-        closeAuthModal();
-        window.location.hash = '#home';
+      if (isFirebaseConfigError(err)) {
+        await localSignIn(cleanEmail, pass);
         return;
+      }
+
+      // If user previously registered a local fallback account, allow signing in with it
+      if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
+        const existingAccounts = readLocalAccounts();
+        if (existingAccounts[cleanEmail]) {
+          await localSignIn(cleanEmail, pass);
+          return;
+        }
       }
 
       const msg = formatFirebaseError(err);
@@ -291,9 +339,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     clearAuthMessages();
+    if (!isFirebaseConfigured || !auth || !googleProvider) {
+      const msg = 'Google Sign-In requires Firebase cloud configuration on this host. Please sign up or sign in using your Email & Password above.';
+      setAuthError(msg);
+      throw new Error(msg);
+    }
+
     try {
       const cred = await signInWithPopup(auth, googleProvider);
-      // Check if newly signed up user with no resume data yet
       const uid = cred.user.uid;
       const existingResume = await storageService.getUserResume(uid);
       if (!existingResume) {
@@ -306,7 +359,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       closeAuthModal();
       window.location.hash = '#home';
     } catch (err: any) {
-      const msg = formatFirebaseError(err);
+      const msg = isFirebaseConfigError(err)
+        ? 'Google Sign-In is unavailable with the current Firebase configuration. Please use Email & Password above.'
+        : formatFirebaseError(err);
       setAuthError(msg);
       throw new Error(msg);
     }
@@ -316,9 +371,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearAuthMessages();
     localStorage.removeItem('compass_active_user');
     setUser(null);
-    try {
-      await signOut(auth);
-    } catch {}
+    if (auth) {
+      try {
+        await signOut(auth);
+      } catch {}
+    }
   };
 
   const deleteAccount = async () => {
@@ -326,20 +383,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const uid = user.uid;
     const cleanEmail = user.email?.toLowerCase().trim();
 
-    // 1. Permanently erase all data from cloud database (Firestore) and localStorage
     await storageService.clearAllUserData(uid);
 
-    // 2. Remove local account credential if exists
     if (cleanEmail) {
       try {
-        const existingAccounts = JSON.parse(localStorage.getItem('compass_accounts') || '{}');
+        const existingAccounts = readLocalAccounts();
         delete existingAccounts[cleanEmail];
         localStorage.setItem('compass_accounts', JSON.stringify(existingAccounts));
       } catch {}
     }
 
-    // 3. Delete Firebase Auth user if logged in via Firebase
-    if (auth.currentUser && auth.currentUser.uid === uid) {
+    if (auth?.currentUser && auth.currentUser.uid === uid) {
       try {
         await deleteUser(auth.currentUser);
       } catch (err) {
@@ -350,31 +404,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // 4. Clear active session state
     localStorage.removeItem('compass_active_user');
     setUser(null);
     setDeleteModalOpen(false);
 
-    // 5. Redirect user back to the landing page
     window.location.hash = '';
     window.location.href = '#landing';
     setAuthNotice('Your profile and all data have been permanently deleted.');
   };
 
-  const resetPassword = async (email: string) => {
+  const resetPassword = async (email: string, newPassword?: string) => {
     clearAuthMessages();
+    const cleanEmail = email.trim().toLowerCase();
+    const existingAccounts = readLocalAccounts();
+    const localAccount = existingAccounts[cleanEmail];
+
+    if (!isFirebaseConfigured || !auth || localAccount) {
+      if (!localAccount) {
+        const msg = 'No account found with this email address.';
+        setAuthError(msg);
+        throw new Error(msg);
+      }
+      if (!newPassword) {
+        const msg = 'Please enter a new password to reset your local account.';
+        setAuthError(msg);
+        throw new Error(msg);
+      }
+      if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+        const msg = 'Password must be at least 8 characters and include at least one letter and one number.';
+        setAuthError(msg);
+        throw new Error(msg);
+      }
+      existingAccounts[cleanEmail] = {
+        ...localAccount,
+        passwordHash: await hashPassword(newPassword),
+      };
+      localStorage.setItem('compass_accounts', JSON.stringify(existingAccounts));
+      setAuthNotice('Password updated! You can now sign in with your new password.');
+      return;
+    }
+
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, cleanEmail);
       setAuthNotice('Password reset email sent. Please check your inbox.');
     } catch (err: any) {
-      const msg = formatFirebaseError(err);
+      const msg = isFirebaseConfigError(err)
+        ? 'Email password reset is unavailable without Firebase cloud email configuration.'
+        : formatFirebaseError(err);
       setAuthError(msg);
       throw new Error(msg);
     }
   };
 
   const resendVerification = async () => {
-    if (!auth.currentUser || verificationCooldown > 0) return;
+    if (!auth?.currentUser || verificationCooldown > 0) return;
     try {
       await sendEmailVerification(auth.currentUser);
       setVerificationCooldown(60);
@@ -396,6 +479,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isGoogle = user?.providerData?.some(p => p.providerId === 'google.com') || false;
   const isVerified = !!user && (user.emailVerified || isGoogle);
+  const isCloudAccount = isFirebaseConfigured && !!user && !user.uid.startsWith('usr_');
 
   return (
     <AuthContext.Provider
@@ -403,6 +487,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         isVerified,
+        isCloudAccount,
+        firebaseReady: isFirebaseConfigured,
         authModalOpen,
         authModalMode,
         openAuthModal,

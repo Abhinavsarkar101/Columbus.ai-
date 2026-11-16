@@ -15,6 +15,7 @@ export function checkAndIncrementRateLimit(maxPerMinute = 15): boolean {
 }
 
 export function isUserSynced(): boolean {
+  if (!auth || !db) return false;
   const user = auth.currentUser;
   if (!user) return false;
   if (!authPolicy.requireEmailVerificationToSync) return true;
@@ -26,9 +27,9 @@ export function isUserSynced(): boolean {
 // Generic Storage Service with Firestore + localStorage fallback
 export const storageService = {
   async getCollection<T>(collectionName: string, localKey: string): Promise<T[]> {
-    if (isUserSynced()) {
+    if (isUserSynced() && auth?.currentUser && db) {
       try {
-        const uid = auth.currentUser!.uid;
+        const uid = auth.currentUser.uid;
         const colRef = collection(db, 'users', uid, collectionName);
         const snapshot = await getDocs(colRef);
         const items: T[] = [];
@@ -70,9 +71,9 @@ export const storageService = {
       console.warn(`localStorage save failed for ${localKey}:`, e);
     }
 
-    if (isUserSynced()) {
+    if (isUserSynced() && auth?.currentUser && db) {
       try {
-        const uid = auth.currentUser!.uid;
+        const uid = auth.currentUser.uid;
         const docRef = doc(db, 'users', uid, collectionName, id);
         await setDoc(docRef, itemWithId, { merge: true });
       } catch (err) {
@@ -92,9 +93,9 @@ export const storageService = {
       console.warn(`localStorage delete failed for ${localKey}:`, e);
     }
 
-    if (isUserSynced()) {
+    if (isUserSynced() && auth?.currentUser && db) {
       try {
-        const uid = auth.currentUser!.uid;
+        const uid = auth.currentUser.uid;
         const docRef = doc(db, 'users', uid, collectionName, id);
         await deleteDoc(docRef);
       } catch (err) {
@@ -104,9 +105,9 @@ export const storageService = {
   },
 
   async getPreferences<T>(localKey = 'compass_preferences'): Promise<T | null> {
-    if (isUserSynced()) {
+    if (isUserSynced() && auth?.currentUser && db) {
       try {
-        const uid = auth.currentUser!.uid;
+        const uid = auth.currentUser.uid;
         const docRef = doc(db, 'users', uid, 'preferences', 'main');
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
@@ -129,9 +130,9 @@ export const storageService = {
       localStorage.setItem(localKey, JSON.stringify(prefs));
     } catch (e) {}
 
-    if (isUserSynced()) {
+    if (isUserSynced() && auth?.currentUser && db) {
       try {
-        const uid = auth.currentUser!.uid;
+        const uid = auth.currentUser.uid;
         const docRef = doc(db, 'users', uid, 'preferences', 'main');
         await setDoc(docRef, { ...prefs, updatedAt: new Date().toISOString() }, { merge: true });
       } catch (err) {
@@ -142,7 +143,7 @@ export const storageService = {
 
   // Per-User Resume Persistence
   async getUserResume(uid: string): Promise<any | null> {
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'resumes', 'current');
         const snap = await getDoc(docRef);
@@ -166,7 +167,7 @@ export const storageService = {
       localStorage.setItem(`compass_user_resume_${uid}`, JSON.stringify(resume));
     } catch {}
 
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'resumes', 'current');
         await setDoc(docRef, { data: resume, updatedAt: new Date().toISOString() }, { merge: true });
@@ -178,7 +179,7 @@ export const storageService = {
 
   // Per-User Job Match Persistence
   async getUserJobMatch(uid: string): Promise<any | null> {
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'jobs', 'current_match');
         const snap = await getDoc(docRef);
@@ -202,7 +203,7 @@ export const storageService = {
       localStorage.setItem(`compass_jobmatch_${uid}`, JSON.stringify(matchData));
     } catch {}
 
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'jobs', 'current_match');
         await setDoc(docRef, { ...matchData, updatedAt: new Date().toISOString() }, { merge: true });
@@ -214,7 +215,7 @@ export const storageService = {
 
   // Per-User Assessment Persistence
   async getUserAssessment(uid: string): Promise<any | null> {
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'assessment', 'current');
         const snap = await getDoc(docRef);
@@ -238,7 +239,7 @@ export const storageService = {
       localStorage.setItem(`compass_assessment_${uid}`, JSON.stringify(tracksState));
     } catch {}
 
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const docRef = doc(db, 'users', uid, 'assessment', 'current');
         await setDoc(docRef, { tracksState, updatedAt: new Date().toISOString() }, { merge: true });
@@ -262,7 +263,7 @@ export const storageService = {
       localStorage.removeItem('compass_assessment_results');
     } catch {}
 
-    if (isUserSynced() && auth.currentUser?.uid === uid) {
+    if (isUserSynced() && db && auth?.currentUser?.uid === uid) {
       try {
         const resumeRef = doc(db, 'users', uid, 'resumes', 'current');
         await setDoc(resumeRef, { data: initialResume, updatedAt: new Date().toISOString() });
@@ -279,7 +280,7 @@ export const storageService = {
   // Permanently delete all user data across cloud database and browser storage
   async clearAllUserData(uid: string): Promise<void> {
     // 1. Delete from Firestore if synced
-    if (auth.currentUser && auth.currentUser.uid === uid) {
+    if (db && auth?.currentUser && auth.currentUser.uid === uid) {
       const subcollections = ['resumes', 'jobs', 'assessment', 'preferences'];
       for (const colName of subcollections) {
         try {

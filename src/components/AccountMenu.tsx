@@ -7,7 +7,7 @@ interface AccountMenuProps {
 }
 
 export const AccountMenu: React.FC<AccountMenuProps> = ({ onNavigateTab }) => {
-  const { user, isVerified, openAuthModal, logout, openDeleteModal } = useAuth();
+  const { user, isVerified, isCloudAccount, openAuthModal, logout, openDeleteModal } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   if (!user) {
@@ -55,7 +55,11 @@ export const AccountMenu: React.FC<AccountMenuProps> = ({ onNavigateTab }) => {
             <div className="pt-1 flex items-center gap-1.5">
               <span className={`inline-block w-2 h-2 rounded-full ${isVerified ? 'bg-[#00DF89]' : 'bg-amber-400'}`}></span>
               <span className="text-[10px] text-slate-400 font-medium">
-                {isVerified ? 'Cloud Sync Active (Verified)' : 'Unverified (Local Storage Mode)'}
+                {isCloudAccount && isVerified
+                  ? 'Cloud Sync Active (Verified)'
+                  : isVerified
+                  ? 'Account Active (Local Browser Storage)'
+                  : 'Unverified (Local Storage Mode)'}
               </span>
             </div>
           </div>

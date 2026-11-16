@@ -7,6 +7,7 @@ export const AuthModal: React.FC = () => {
   const {
     authModalOpen,
     authModalMode,
+    firebaseReady,
     closeAuthModal,
     openAuthModal,
     signInWithEmail,
@@ -31,6 +32,8 @@ export const AuthModal: React.FC = () => {
   const hasLetter = /[a-zA-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
 
+  const isLocalReset = authModalMode === 'forgot' && !firebaseReady;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
@@ -47,6 +50,13 @@ export const AuthModal: React.FC = () => {
       }
     }
 
+    if (isLocalReset) {
+      if (!hasMinLength || !hasLetter || !hasNumber) {
+        setLocalError('New password must be at least 8 characters and include at least one letter and one number.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       if (authModalMode === 'signin') {
@@ -54,7 +64,7 @@ export const AuthModal: React.FC = () => {
       } else if (authModalMode === 'signup') {
         await signUpWithEmail(email, password, name);
       } else if (authModalMode === 'forgot') {
-        await resetPassword(email);
+        await resetPassword(email, isLocalReset ? password : password || undefined);
       }
     } catch (err: any) {
       setLocalError(err.message || 'Authentication failed');
@@ -96,9 +106,13 @@ export const AuthModal: React.FC = () => {
             {authModalMode === 'forgot' && 'Reset Password'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-400">
-            {authModalMode === 'signin' && 'Sign in to sync your resumes and job matches across devices.'}
-            {authModalMode === 'signup' && 'Sign up to secure your data and access cloud sync.'}
-            {authModalMode === 'forgot' && 'Enter your email and we\'ll send you a password reset link.'}
+            {authModalMode === 'signin' && 'Sign in to access your resumes, assessments, and job matches.'}
+            {authModalMode === 'signup' && 'Sign up to secure your data and unlock your Compass workspace.'}
+            {authModalMode === 'forgot' && (
+              isLocalReset
+                ? 'Enter your registered email and choose a new password.'
+                : 'Enter your email and we\'ll send you a password reset link.'
+            )}
           </p>
         </div>
 
@@ -149,9 +163,11 @@ export const AuthModal: React.FC = () => {
             </div>
           </div>
 
-          {authModalMode !== 'forgot' && (
+          {(authModalMode !== 'forgot' || isLocalReset) && (
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300">Password</label>
+              <label className="text-xs font-semibold text-slate-300">
+                {isLocalReset ? 'New Password' : 'Password'}
+              </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -163,7 +179,7 @@ export const AuthModal: React.FC = () => {
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 pl-10 text-sm text-white focus:outline-none focus:border-[#00DF89]"
                 />
               </div>
-              {authModalMode === 'signup' && password.length > 0 && (
+              {(authModalMode === 'signup' || isLocalReset) && password.length > 0 && (
                 <div className="pt-2 space-y-1 text-xs">
                   <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-400' : 'text-slate-400'}`}>
                     <span>• At least 8 characters</span>
@@ -200,7 +216,7 @@ export const AuthModal: React.FC = () => {
                 <span>
                   {authModalMode === 'signin' && 'Sign In'}
                   {authModalMode === 'signup' && 'Create Account'}
-                  {authModalMode === 'forgot' && 'Send Reset Link'}
+                  {authModalMode === 'forgot' && (isLocalReset ? 'Update Password' : 'Send Reset Link')}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </>
@@ -208,7 +224,7 @@ export const AuthModal: React.FC = () => {
           </button>
         </form>
 
-        {authModalMode !== 'forgot' && (
+        {authModalMode !== 'forgot' && firebaseReady && (
           <>
             <div className="relative flex items-center justify-center">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
