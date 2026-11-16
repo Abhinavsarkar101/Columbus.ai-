@@ -60,9 +60,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function hashPassword(password: string): Promise<string> {
-  const enc = new TextEncoder().encode(password + '_compass_salt_2026');
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const salted = password + '_compass_salt_2026';
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const enc = new TextEncoder().encode(salted);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  let hash = 2166136261;
+  for (let i = 0; i < salted.length; i++) {
+    hash ^= salted.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function readLocalAccounts(): Record<string, any> {
@@ -214,7 +223,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     localStorage.setItem('compass_accounts', JSON.stringify(existingAccounts));
     localStorage.setItem('compass_active_user', JSON.stringify(localUser));
-    setUser(localUser);
 
     await storageService.resetUserDataOnSignup(uid, {
       ...EMPTY_RESUME_DATA,
@@ -222,6 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: cleanEmail,
     });
 
+    setUser(localUser);
     setAuthNotice('Account created successfully! Welcome to Compass.');
     closeAuthModal();
     window.location.hash = '#home';
