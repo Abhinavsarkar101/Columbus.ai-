@@ -168,6 +168,14 @@ export const Navigation: React.FC<NavigationProps> = ({
                 Resume Studio
               </button>
               <button
+                onClick={() => handleTabSelect('jobs')}
+                className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                  activeTab === 'jobs' ? 'bg-[#00DF89] text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Job Search
+              </button>
+              <button
                 onClick={() => handleTabSelect('match')}
                 className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
                   activeTab === 'match' ? 'bg-[#00DF89] text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
@@ -308,6 +316,14 @@ export const Navigation: React.FC<NavigationProps> = ({
             }`}
           >
             Resume
+          </button>
+          <button
+            onClick={() => handleTabSelect('jobs')}
+            className={`px-2.5 py-1 rounded whitespace-nowrap cursor-pointer ${
+              activeTab === 'jobs' ? 'bg-[#00DF89] text-slate-950 font-bold' : ''
+            }`}
+          >
+            Job Search
           </button>
           <button
             onClick={() => handleTabSelect('match')}

@@ -534,6 +534,33 @@ async function startServer() {
     }
   });
 
+  // 2b. Local-dev proxy to Python FastAPI JobSpy service (company-jobs-service)
+  app.post('/api/company-interview/openings/search', async (req, res) => {
+    const serviceBase = (process.env.COMPANY_OPENINGS_SERVICE_URL || 'http://127.0.0.1:8001').replace(/\/+$/, '');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 65000);
+    try {
+      const upstream = await fetch(`${serviceBase}/api/company-interview/openings/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body || {}),
+        signal: controller.signal,
+      });
+      const text = await upstream.text();
+      res.status(upstream.status).type('application/json').send(text);
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError';
+      res.status(isTimeout ? 504 : 503).json({
+        success: false,
+        error: isTimeout
+          ? 'The local Python job search service timed out.'
+          : 'Live job search Python service is not running locally. Start company-jobs-service on port 8001 or set VITE_COMPANY_OPENINGS_API_URL.',
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  });
+
   // 3. General Gemini Content Generation
   app.post('/api/gemini/generate', async (req, res) => {
     try {

@@ -6,12 +6,14 @@ import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firesto
 const localConfigs = import.meta.glob('../../firebase-applet-config.json', { eager: true }) as Record<string, any>;
 const localFileConfig = Object.values(localConfigs)[0]?.default || Object.values(localConfigs)[0] || {};
 
-const rawApiKey = String(import.meta.env.VITE_FIREBASE_API_KEY || localFileConfig.apiKey || '').trim();
-const rawAuthDomain = String(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localFileConfig.authDomain || '').trim();
-const rawProjectId = String(import.meta.env.VITE_FIREBASE_PROJECT_ID || localFileConfig.projectId || '').trim();
-const rawStorageBucket = String(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localFileConfig.storageBucket || '').trim();
-const rawMessagingSenderId = String(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localFileConfig.messagingSenderId || '').trim();
-const rawAppId = String(import.meta.env.VITE_FIREBASE_APP_ID || localFileConfig.appId || '').trim();
+const cleanEnv = (v: unknown) => String(v || '').trim().replace(/^["']|["']$/g, '');
+
+const rawApiKey = cleanEnv(import.meta.env.VITE_FIREBASE_API_KEY || localFileConfig.apiKey);
+const rawAuthDomain = cleanEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localFileConfig.authDomain);
+const rawProjectId = cleanEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID || localFileConfig.projectId);
+const rawStorageBucket = cleanEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localFileConfig.storageBucket);
+const rawMessagingSenderId = cleanEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localFileConfig.messagingSenderId);
+const rawAppId = cleanEnv(import.meta.env.VITE_FIREBASE_APP_ID || localFileConfig.appId);
 
 function isPlaceholderValue(val: string): boolean {
   if (!val) return true;
@@ -82,10 +84,13 @@ export function isFirebaseConfigError(err: any): boolean {
     code.includes('configuration-not-found') ||
     code.includes('app-not-authorized') ||
     code.includes('project-not-found') ||
+    code.includes('requests-from-referer') ||
     message.includes('api-key-not-valid') ||
     message.includes('invalid-api-key') ||
     message.includes('operation-not-allowed') ||
-    message.includes('configuration-not-found')
+    message.includes('configuration-not-found') ||
+    message.includes('requests-from-referer') ||
+    message.includes('api_key_http_referrer_blocked')
   );
 }
 

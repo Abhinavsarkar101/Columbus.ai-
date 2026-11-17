@@ -21,9 +21,14 @@ export const Landing: React.FC<LandingProps> = ({ onNavigateTab }) => {
   };
 
   // Simulator State
-  const [activeSimTab, setActiveSimTab] = useState<'probe' | 'ats' | 'outreach'>('probe');
+  const [activeSimTab, setActiveSimTab] = useState<'probe' | 'ats' | 'outreach' | 'jobs'>('probe');
   const [probeStyle, setProbeStyle] = useState<'analytical' | 'commercial' | 'people' | 'execution'>('analytical');
   const [probeIndustry, setProbeIndustry] = useState<'tech' | 'fmcg' | 'finance' | 'consulting'>('tech');
+
+  // Simulator: Strict Job Filter
+  const [simJobRole, setSimJobRole] = useState<'apm' | 'ba' | 'fa'>('apm');
+  const [simJobExp, setSimJobExp] = useState<'fresher' | '1_3'>('fresher');
+  const [simJobFreshness, setSimJobFreshness] = useState<'24h' | '7d'>('24h');
 
   // Simulator: ATS Bullet
   const [bulletSampleIndex, setBulletSampleIndex] = useState(0);
@@ -159,6 +164,10 @@ Warm regards,
       a: "Compass never scrapes or automates requests against LinkedIn. Instead, we use deterministic search syntax (boolean operators, company IDs, seniority keywords, and school filters) to construct live LinkedIn query URLs. When you click, it opens LinkedIn in a new tab with the exact filtered talent pool ready for your outreach.",
     },
     {
+      q: "How does Live Job Search filter out senior titles and older listings?",
+      a: "Unlike standard job portals that mix Tech Lead, Senior, or weeks-old promoted roles into associate searches, Compass applies a three-gate deterministic filter after querying Indeed India, Naukri, and public LinkedIn: (1) strict role-keyword and seniority matching for any role you enter, (2) rule-based experience-band verification that keeps only strict good matches, and (3) date-cutoff verification matching your exact Posting Freshness window (e.g., Last 24 hours).",
+    },
+    {
       q: "Can I use Compass if I am still preparing for MBA entrances (CAT, GMAT, GRE)?",
       a: "Absolutely. Many aspirants use Compass during interview rounds (WAT/PI) to convincingly answer: 'Why this specialization?' and 'Where do you see yourself in 3 years?' Understanding specific roles and industry compensation gives you an immediate competitive edge over candidates with generic answers.",
     },
@@ -189,8 +198,26 @@ Warm regards,
               </h1>
 
               <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed mx-auto lg:mx-0">
-                Calibrate your specialization with 24 behavioral archetypes, audit your resume against placement committee ATS benchmarks using a deterministic engine, and sync your entire candidate pipeline across devices.
+                Calibrate your specialization with 24 behavioral archetypes, audit your resume against placement committee ATS benchmarks, discover live openings filtered strictly by role, experience &amp; recency, and sync your candidate pipeline across devices.
               </p>
+
+              {/* New Release Highlight Banner */}
+              <div className="p-3.5 rounded-2xl bg-emerald-950/30 border border-[#00DF89]/40 flex flex-col sm:flex-row items-center justify-between gap-3 max-w-2xl mx-auto lg:mx-0 text-left">
+                <div className="space-y-0.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#00DF89]">
+                    New Release · Precision Live Job Search
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Search Indeed India, Naukri &amp; LinkedIn with strict title/seniority matching, experience filtering, and 24-hour freshness cutoffs.
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleModuleClick('jobs')}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-950 bg-[#00DF89] hover:bg-[#00c97b] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Try Job Search →
+                </button>
+              </div>
 
               {/* Action Buttons */}
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
@@ -217,11 +244,11 @@ Warm regards,
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[#00DF89] font-bold">✓</span>
-                  <span>Cloud Persistence & Sync</span>
+                  <span>Strict Live Job Discovery</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[#00DF89] font-bold">✓</span>
-                  <span>B-School Approved Formats</span>
+                  <span>Cloud Persistence &amp; Sync</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[#00DF89] font-bold">✓</span>
@@ -535,18 +562,18 @@ Warm regards,
               Experience It Now
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Test three core engines right in your browser
+              Test four core engines right in your browser
             </h2>
             <p className="text-sm text-slate-400 max-w-2xl mx-auto">
-              Interactive simulators showcasing the empirical calibration powering our full application suite.
+              Interactive simulators showcasing the empirical calibration and strict filtering powering our full application suite.
             </p>
           </div>
 
           {/* Simulator Tabs */}
-          <div className="flex items-center justify-center gap-2 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl max-w-md mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl mx-auto">
             <button
               onClick={() => setActiveSimTab('probe')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                 activeSimTab === 'probe' ? 'bg-[#00DF89] text-slate-950 shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -554,7 +581,7 @@ Warm regards,
             </button>
             <button
               onClick={() => setActiveSimTab('ats')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                 activeSimTab === 'ats' ? 'bg-[#00DF89] text-slate-950 shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -562,11 +589,19 @@ Warm regards,
             </button>
             <button
               onClick={() => setActiveSimTab('outreach')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                 activeSimTab === 'outreach' ? 'bg-[#00DF89] text-slate-950 shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
               3. Cold Outreach
+            </button>
+            <button
+              onClick={() => setActiveSimTab('jobs')}
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                activeSimTab === 'jobs' ? 'bg-[#00DF89] text-slate-950 shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              4. Strict Job Filter
             </button>
           </div>
 
@@ -813,7 +848,147 @@ Warm regards,
                     onClick={() => handleModuleClick('target')}
                     className="text-xs font-bold text-[#00DF89] hover:underline cursor-pointer"
                   >
-                    Open People & Target Outreach Map →
+                    Open People &amp; Target Outreach Map →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: Strict Job Filter */}
+            {activeSimTab === 'jobs' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Strict Role, Experience &amp; Freshness Filter Engine</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Preview how Compass strips senior/lead noise, experience mismatches, and older reposts from multi-board results.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Target Job Role</label>
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        { id: 'apm', label: 'Associate Product Manager' },
+                        { id: 'ba', label: 'Business Analyst' },
+                        { id: 'fa', label: 'Financial Analyst' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setSimJobRole(item.id as 'apm' | 'ba' | 'fa')}
+                          className={`px-3 py-2 rounded-xl border text-xs text-left transition-all cursor-pointer ${
+                            simJobRole === item.id
+                              ? 'bg-emerald-950/70 border-[#00DF89] text-white font-bold'
+                              : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Candidate Experience</label>
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        { id: 'fresher', label: 'Fresher / 0–1 years' },
+                        { id: '1_3', label: '1–3 years' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setSimJobExp(item.id as 'fresher' | '1_3')}
+                          className={`px-3 py-2 rounded-xl border text-xs text-left transition-all cursor-pointer ${
+                            simJobExp === item.id
+                              ? 'bg-emerald-950/70 border-[#00DF89] text-white font-bold'
+                              : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Posting Freshness</label>
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        { id: '24h', label: 'Last 24 hours' },
+                        { id: '7d', label: 'Last 7 days' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setSimJobFreshness(item.id as '24h' | '7d')}
+                          className={`px-3 py-2 rounded-xl border text-xs text-left transition-all cursor-pointer ${
+                            simJobFreshness === item.id
+                              ? 'bg-emerald-950/70 border-[#00DF89] text-white font-bold'
+                              : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simulated Deterministic Gate Output */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-900/40 space-y-2.5">
+                    <div className="text-xs font-bold text-rose-400">Upstream Board Noise (Filtered Out)</div>
+                    <div className="space-y-2 text-[11px]">
+                      <div className="p-2.5 rounded-xl bg-slate-950/60 border border-rose-950 text-slate-300">
+                        <div className="font-semibold text-white">
+                          {simJobRole === 'apm' && 'Tech Lead · 6–9 Yrs'}
+                          {simJobRole === 'ba' && 'Senior Business Analyst · 5–8 Yrs'}
+                          {simJobRole === 'fa' && 'VP Corporate Finance · 10+ Yrs'}
+                        </div>
+                        <div className="text-rose-300 mt-0.5">
+                          ✕ Excluded: Unrequested higher seniority &amp; outside {simJobExp === 'fresher' ? '0–1 yrs' : '1–3 yrs'}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-950/60 border border-rose-950 text-slate-300">
+                        <div className="font-semibold text-white">
+                          {simJobRole === 'apm' && 'Associate Product Manager · Posted 11 days ago'}
+                          {simJobRole === 'ba' && 'Business Analyst · Posted 9 days ago'}
+                          {simJobRole === 'fa' && 'Financial Analyst · Posted 12 days ago'}
+                        </div>
+                        <div className="text-rose-300 mt-0.5">
+                          ✕ Excluded: Posted date exceeds {simJobFreshness === '24h' ? 'Last 24 hours' : 'Last 7 days'} cutoff
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-900/40 space-y-2.5">
+                    <div className="text-xs font-bold text-[#00DF89]">Verified Results Shown</div>
+                    <div className="p-3 rounded-xl bg-slate-950/70 border border-emerald-950 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-white">
+                          {simJobRole === 'apm' && 'Associate Product Manager'}
+                          {simJobRole === 'ba' && 'Business Analyst'}
+                          {simJobRole === 'fa' && 'Financial Analyst'}
+                        </span>
+                        <span className="text-[10px] font-bold text-[#00DF89]">Good experience match</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {simJobExp === 'fresher' ? '0–1 years' : '1–3 years'} · Within{' '}
+                        {simJobFreshness === '24h' ? 'Last 24 hours' : 'Last 7 days'} · Indeed India / LinkedIn
+                      </div>
+                      <div className="text-[11px] text-emerald-300 pt-1">
+                        ✓ Exact role keywords verified, zero leadership inflation, date within window.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <button
+                    onClick={() => handleModuleClick('jobs')}
+                    className="text-xs font-bold text-[#00DF89] hover:underline cursor-pointer"
+                  >
+                    Open Live Job Search →
                   </button>
                 </div>
               </div>
@@ -830,7 +1005,7 @@ Warm regards,
               The Modular Suite
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              Six synchronized modules for the complete placement cycle
+              Seven synchronized modules for the complete placement cycle
             </h2>
             <p className="text-sm text-slate-400">
               Each module answers one high-stakes decision and securely persists its structured output across your devices.
@@ -896,7 +1071,36 @@ Warm regards,
               </button>
             </div>
 
-            {/* Tool 3 */}
+            {/* Tool 3: NEW Live Job Search */}
+            <div 
+              onClick={() => handleModuleClick('jobs')}
+              className="p-7 rounded-3xl bg-gradient-to-b from-emerald-950/30 to-slate-900/90 border border-[#00DF89]/50 hover:border-[#00DF89] transition-all flex flex-col justify-between space-y-4 cursor-pointer group"
+            >
+              <div className="space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform">
+                  🔍
+                </div>
+                <div className="text-xs font-bold text-[#00DF89] uppercase tracking-wider">Module 3 · New Release</div>
+                <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">Precision Live Job Search</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Real-time multi-board discovery across Indeed India, Naukri, and public LinkedIn starting from your target role with optional company filtering.
+                </p>
+                <div className="pt-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300">
+                  <strong className="text-white">What it does:</strong> Strips unrelated senior/lead titles, enforces exact experience bands, and applies strict 24h–30d freshness cutoffs.
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleModuleClick('jobs');
+                }}
+                className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-950 bg-[#00DF89] hover:bg-[#00c97b] transition-all cursor-pointer"
+              >
+                Search Live Jobs →
+              </button>
+            </div>
+
+            {/* Tool 4 */}
             <div 
               onClick={() => handleModuleClick('match')}
               className="p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-[#00DF89] transition-all flex flex-col justify-between space-y-4 cursor-pointer group"
@@ -905,7 +1109,7 @@ Warm regards,
                 <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform">
                   🎯
                 </div>
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 3</div>
+                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 4</div>
                 <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">Deterministic Job Matcher</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   Powered by @veriworkly/ats-engine. Evaluates candidate evidence against required vs preferred qualifications using a 70-term MBA taxonomy.
@@ -925,7 +1129,7 @@ Warm regards,
               </button>
             </div>
 
-            {/* Tool 4 */}
+            {/* Tool 5 */}
             <div 
               onClick={() => handleModuleClick('target')}
               className="p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-[#00DF89] transition-all flex flex-col justify-between space-y-4 cursor-pointer group"
@@ -934,7 +1138,7 @@ Warm regards,
                 <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform">
                   👥
                 </div>
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 4</div>
+                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 5</div>
                 <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">People Map & Target Outreach</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   Generates 6 precision LinkedIn search queries for Alumni, Peers, and Hiring Managers. Writes cold outreach sequences with reply-stage tracker.
@@ -954,7 +1158,7 @@ Warm regards,
               </button>
             </div>
 
-            {/* Tool 5 */}
+            {/* Tool 6 */}
             <div 
               onClick={() => handleModuleClick('company')}
               className="p-7 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-[#00DF89] transition-all flex flex-col justify-between space-y-4 cursor-pointer group"
@@ -963,7 +1167,7 @@ Warm regards,
                 <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform">
                   🏢
                 </div>
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 5</div>
+                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 6</div>
                 <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">Company Intelligence & Prep</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   Dossiers on 12 top MBA recruiters (MBB, Big 4, Amazon, HUL, Swiggy). Hiring rounds, compensation bands, culture ratings, and review theme parser.
@@ -983,30 +1187,31 @@ Warm regards,
               </button>
             </div>
 
-            {/* Tool 6: Integrated Dashboard & Cloud Sync */}
+            {/* Tool 7: Integrated Dashboard & Cloud Sync (full-width anchor row) */}
             <div 
               onClick={() => handleModuleClick('home')}
-              className="p-7 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800 hover:border-[#00DF89] transition-all flex flex-col justify-between space-y-4 cursor-pointer group"
+              className="md:col-span-2 lg:col-span-3 p-7 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-slate-800 hover:border-[#00DF89] transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-6 cursor-pointer group"
             >
-              <div className="space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform">
-                  ☁️
+              <div className="space-y-2.5 max-w-3xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-xl group-hover:scale-105 transition-transform shrink-0">
+                    ☁️
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 7 · Platform Backbone</div>
+                    <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">Cloud Sync &amp; Candidate OS</h3>
+                  </div>
                 </div>
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Module 6</div>
-                <h3 className="text-xl font-bold text-white group-hover:text-[#00DF89] transition-colors">Cloud Sync & Candidate OS</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Powered by Firebase Authentication and Firestore. Access and edit all your resumes, reports, and target jobs across any device seamlessly.
+                  Powered by Firebase Authentication and Firestore with resilient local-account fallback. Access and edit all your resumes, reports, and target jobs seamlessly across devices.
                 </p>
-                <div className="pt-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300">
-                  <strong className="text-white">What it does:</strong> Secures your candidate documents with user-level ABAC isolation while retaining instant offline local support.
-                </div>
               </div>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleModuleClick('home');
                 }}
-                className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-950 bg-[#00DF89] hover:bg-[#00c97b] transition-all cursor-pointer"
+                className="px-6 py-3 rounded-xl text-xs font-bold text-slate-950 bg-[#00DF89] hover:bg-[#00c97b] transition-all whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Go to Dashboard →
               </button>
@@ -1042,6 +1247,15 @@ Warm regards,
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 text-slate-300">
+                <tr>
+                  <td className="p-4 sm:p-5 font-semibold text-white">Live Job Discovery</td>
+                  <td className="p-4 sm:p-5 font-bold text-[#00DF89] bg-emerald-950/20">
+                    Multi-board search (Indeed India, Naukri, LinkedIn) with strict title/seniority, experience-band &amp; freshness cutoffs
+                  </td>
+                  <td className="p-4 sm:p-5 text-slate-400">Promoted senior/lead noise &amp; stale reposts</td>
+                  <td className="p-4 sm:p-5 text-slate-400">None</td>
+                  <td className="p-4 sm:p-5 text-slate-400">None</td>
+                </tr>
                 <tr>
                   <td className="p-4 sm:p-5 font-semibold text-white">ATS Matching Engine</td>
                   <td className="p-4 sm:p-5 font-bold text-[#00DF89] bg-emerald-950/20">
@@ -1305,6 +1519,9 @@ Warm regards,
               </button>
               <button onClick={() => handleModuleClick('resume')} className="hover:text-white transition-colors cursor-pointer">
                 Resume Studio
+              </button>
+              <button onClick={() => handleModuleClick('jobs')} className="hover:text-white transition-colors cursor-pointer">
+                Job Search
               </button>
               <button onClick={() => handleModuleClick('match')} className="hover:text-white transition-colors cursor-pointer">
                 Job Matcher

@@ -12,3 +12,10 @@ firebase-applet-config.json
 firebase_applet_config.xml
 .env.local
 .env.*.local
+
+# Python FastAPI microservice artifacts
+company-jobs-service/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+

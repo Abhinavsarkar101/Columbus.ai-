@@ -10,6 +10,7 @@ import { storageService } from './lib/storageService';
 import { Assess } from './pages/Assess';
 import { Company } from './pages/Company';
 import { Home } from './pages/Home';
+import { JobSearch } from './pages/JobSearch';
 import { Landing } from './pages/Landing';
 import { Match } from './pages/Match';
 import { ResumePage } from './pages/ResumePage';
@@ -27,7 +28,7 @@ function AppContent() {
     if (!user) {
       return 'landing';
     }
-    if (['landing', 'home', 'assess', 'resume', 'match', 'target', 'company', 'selftest'].includes(hash)) {
+    if (['landing', 'home', 'assess', 'resume', 'jobs', 'match', 'target', 'company', 'selftest'].includes(hash)) {
       return hash;
     }
     return 'landing';
@@ -105,7 +106,7 @@ function AppContent() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
-      if (['home', 'assess', 'resume', 'match', 'target', 'company', 'selftest'].includes(hash)) {
+      if (['home', 'assess', 'resume', 'jobs', 'match', 'target', 'company', 'selftest'].includes(hash)) {
         if (!user && !loading) {
           setCurrentTab('landing');
           window.location.hash = '';
@@ -173,6 +174,10 @@ function AppContent() {
             onUpdateResume={handleUpdateResume}
             onNavigateTab={handleNavigate}
           />
+        )}
+
+        {user && currentTab === 'jobs' && (
+          <JobSearch onNavigateTab={handleNavigate} />
         )}
 
         {user && currentTab === 'match' && (

@@ -113,28 +113,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          emailVerified: firebaseUser.emailVerified,
-          providerData: firebaseUser.providerData,
-        });
-        setLoading(false);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        if (firebaseUser) {
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            emailVerified: firebaseUser.emailVerified,
+            providerData: firebaseUser.providerData,
+          });
+          setLoading(false);
 
-        // Check if first sign-in and local data exists for migration prompt
-        if (!localStorage.getItem('compass_migrated_to_cloud')) {
-          const hasLocalData = localStorage.getItem('compass_resumes') || localStorage.getItem('compass_jobs');
-          if (hasLocalData) {
-            setMigrationPromptOpen(true);
+          // Check if first sign-in and local data exists for migration prompt
+          if (!localStorage.getItem('compass_migrated_to_cloud')) {
+            const hasLocalData = localStorage.getItem('compass_resumes') || localStorage.getItem('compass_jobs');
+            if (hasLocalData) {
+              setMigrationPromptOpen(true);
+            }
           }
+        } else {
+          restoreLocalSession();
         }
-      } else {
+      },
+      () => {
         restoreLocalSession();
       }
-    });
+    );
     return () => unsubscribe();
   }, []);
 
