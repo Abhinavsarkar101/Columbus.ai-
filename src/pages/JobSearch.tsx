@@ -113,6 +113,8 @@ function formatSourceLabel(source: string): string {
       return 'RemoteOK';
     case 'arbeitnow':
       return 'Arbeitnow';
+    case 'himalayas':
+      return 'Himalayas';
     default:
       return source;
   }

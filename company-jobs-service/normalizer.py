@@ -459,8 +459,15 @@ def is_within_freshness_window(
         return False
 
     lower = text.lower()
-    if any(tok in lower for tok in ("just now", "today", "few hours", "hour ago", "hours ago", "min ago", "mins ago")):
+    if any(tok in lower for tok in ("just now", "today", "few hours", "moments ago", "seconds ago")):
         return True
+    if re.search(r"(\d+)\s*(?:min|mins|minute|minutes)\s*ago", lower):
+        return True
+    m_hours = re.search(r"(\d+)\s*(?:hr|hrs|hour|hours)\s*ago", lower)
+    if m_hours:
+        return int(m_hours.group(1)) <= max_hours
+    if "hour ago" in lower:
+        return 1 <= max_hours
     if "yesterday" in lower:
         return 1 <= max_days
     m_days = re.search(r"(\d+)\s*\+?\s*days?\s*ago", lower)
@@ -469,6 +476,16 @@ def is_within_freshness_window(
         if "+" in m_days.group(0):
             return False
         return num_days <= max_days
+    m_weeks = re.search(r"(\d+)\s*\+?\s*weeks?\s*ago", lower)
+    if m_weeks:
+        if "+" in m_weeks.group(0):
+            return False
+        return int(m_weeks.group(1)) * 7 <= max_days
+    m_months = re.search(r"(\d+)\s*\+?\s*months?\s*ago", lower)
+    if m_months:
+        if "+" in m_months.group(0):
+            return False
+        return int(m_months.group(1)) * 30 <= max_days
 
     # Full ISO timestamp string (with 'T' and time)
     if "t" in lower and len(text) > 10:

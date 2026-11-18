@@ -233,11 +233,19 @@ const CURATED_SMARTRECRUITERS_BOARDS: { slug: string; company: string; countryCo
   { slug: 'Visa', company: 'Visa', countryCode: 'in' },
 ];
 
+const CURATED_LEVER_BOARDS: { slug: string; company: string }[] = [
+  { slug: 'cred', company: 'CRED' },
+  { slug: 'meesho', company: 'Meesho' },
+  { slug: 'paytm', company: 'Paytm' },
+];
+
 const INDIAN_CITIES = [
   'bengaluru',
   'bangalore',
   'mumbai',
   'bombay',
+  'navi mumbai',
+  'thane',
   'delhi',
   'new delhi',
   'ncr',
@@ -247,13 +255,16 @@ const INDIAN_CITIES = [
   'faridabad',
   'ghaziabad',
   'hyderabad',
+  'secunderabad',
   'pune',
   'chennai',
   'kolkata',
   'ahmedabad',
   'jaipur',
   'kochi',
+  'cochin',
   'chandigarh',
+  'mohali',
   'indore',
   'coimbatore',
   'surat',
@@ -263,6 +274,16 @@ const INDIAN_CITIES = [
   'vadodara',
   'visakhapatnam',
   'thiruvananthapuram',
+  'trivandrum',
+  'mysuru',
+  'mysore',
+  'mangaluru',
+  'mangalore',
+  'bhubaneswar',
+  'guwahati',
+  'nashik',
+  'madurai',
+  'vijayawada',
 ];
 
 const NON_INDIA_GEO_REGEX =
@@ -606,11 +627,21 @@ export function isWithinFreshnessWindow(
   const lower = text.toLowerCase();
 
   if (
-    ['just now', 'today', 'few hours', 'hour ago', 'hours ago', 'min ago', 'mins ago'].some((tok) =>
+    ['just now', 'today', 'few hours', 'moments ago', 'seconds ago'].some((tok) =>
       lower.includes(tok)
     )
   ) {
     return true;
+  }
+  if (/(\d+)\s*(?:min|mins|minute|minutes)\s*ago/.test(lower)) {
+    return true;
+  }
+  const mHours = lower.match(/(\d+)\s*(?:hr|hrs|hour|hours)\s*ago/);
+  if (mHours) {
+    return parseInt(mHours[1], 10) <= maxHours;
+  }
+  if (lower.includes('hour ago')) {
+    return 1 <= maxHours;
   }
   if (lower.includes('yesterday')) {
     return 1 <= maxDays;
@@ -619,6 +650,16 @@ export function isWithinFreshnessWindow(
   if (mDays) {
     if (mDays[0].includes('+')) return false;
     return parseInt(mDays[1], 10) <= maxDays;
+  }
+  const mWeeks = lower.match(/(\d+)\s*\+?\s*weeks?\s*ago/);
+  if (mWeeks) {
+    if (mWeeks[0].includes('+')) return false;
+    return parseInt(mWeeks[1], 10) * 7 <= maxDays;
+  }
+  const mMonths = lower.match(/(\d+)\s*\+?\s*months?\s*ago/);
+  if (mMonths) {
+    if (mMonths[0].includes('+')) return false;
+    return parseInt(mMonths[1], 10) * 30 <= maxDays;
   }
 
   const pureDateMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1045,6 +1086,54 @@ function stableShortHash(input: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(12, '0');
 }
 
+interface RawPublicJobRecordWithFreshness extends RawPublicJobRecord {
+  freshnessHint?: string | null;
+}
+
+const LINKEDIN_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+const linkedInDetailCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    detail: {
+      description?: string;
+      applyUrl?: string;
+      employmentType?: string;
+      jobLevel?: string;
+    };
+  }
+>();
+
+async function fetchTextWithTimeout(
+  url: string,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+  headers?: Record<string, string>
+): Promise<{ status: number; text: string }> {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal, headers });
+    const text = await res.text();
+    return { status: res.status, text };
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
 async function fetchJsonWithTimeout(
   url: string,
   timeoutMs: number,
@@ -1302,6 +1391,237 @@ async function fetchArbeitnowJobs(signal?: AbortSignal): Promise<RawPublicJobRec
     });
 }
 
+async function fetchLeverBoard(
+  slug: string,
+  companyLabel: string,
+  signal?: AbortSignal
+): Promise<RawPublicJobRecord[]> {
+  const rows = await fetchJsonWithTimeout(
+    `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`,
+    8000,
+    signal
+  );
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r: any) => r?.text && r?.hostedUrl)
+    .map((r: any): RawPublicJobRecord => ({
+      id: `lever-${slug}-${r.id}`,
+      title: String(r.text).trim(),
+      company: companyLabel,
+      location: r.categories?.location ? String(r.categories.location) : 'Location not specified',
+      jobUrl: String(r.hostedUrl),
+      applyUrl: String(r.applyUrl || r.hostedUrl),
+      source: 'lever',
+      datePosted: typeof r.createdAt === 'number' ? new Date(r.createdAt).toISOString() : null,
+      employmentType: r.categories?.commitment ? String(r.categories.commitment) : 'Not specified',
+      description: htmlToPlainText(
+        [r.descriptionPlain || r.description || '', r.additionalPlain || r.additional || ''].join('\n\n')
+      ),
+      salaryMin: null,
+      salaryMax: null,
+      salaryInterval: null,
+      salaryCurrency: null,
+      isRemote: r.workplaceType === 'remote' ? true : null,
+    }));
+}
+
+async function fetchHimalayasJobs(signal?: AbortSignal): Promise<RawPublicJobRecord[]> {
+  const data = await fetchJsonWithTimeout('https://himalayas.app/jobs/api?limit=50', 8500, signal);
+  const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+  return jobs
+    .filter((j: any) => j?.title && (j?.applicationLink || j?.guid))
+    .map((j: any): RawPublicJobRecord => {
+      const locs = Array.isArray(j.locationRestrictions) && j.locationRestrictions.length > 0
+        ? j.locationRestrictions.join(', ')
+        : 'Remote / Worldwide';
+      const emp = j.employmentType ? String(j.employmentType) : 'Not specified';
+      const seniority = Array.isArray(j.seniority) && j.seniority.length > 0
+        ? String(j.seniority[0])
+        : undefined;
+      const pubIso = typeof j.pubDate === 'number' && Number.isFinite(j.pubDate)
+        ? new Date(j.pubDate * 1000).toISOString()
+        : null;
+      return {
+        id: `himalayas-${j.guid ? stableShortHash(String(j.guid)) : stableShortHash(String(j.applicationLink))}`,
+        title: String(j.title).trim(),
+        company: j.companyName ? String(j.companyName).trim() : 'Company not specified',
+        location: locs,
+        jobUrl: String(j.guid || j.applicationLink),
+        applyUrl: String(j.applicationLink || j.guid),
+        source: 'himalayas',
+        datePosted: pubIso,
+        employmentType: emp,
+        jobLevel: seniority,
+        description: htmlToPlainText(String(j.description || j.excerpt || '')),
+        salaryMin: typeof j.minSalary === 'number' && j.minSalary > 0 ? j.minSalary : null,
+        salaryMax: typeof j.maxSalary === 'number' && j.maxSalary > 0 ? j.maxSalary : null,
+        salaryInterval: j.minSalary || j.maxSalary ? 'yearly' : null,
+        salaryCurrency: j.currency ? String(j.currency) : null,
+        isRemote: true,
+      };
+    });
+}
+
+async function fetchLinkedInGuestJobs(
+  roleQuery: string,
+  requestedLocation: string,
+  companyFilter: string,
+  postingFreshness: PostingFreshnessFilter,
+  employmentType: EmploymentTypeFilter,
+  signal?: AbortSignal
+): Promise<RawPublicJobRecordWithFreshness[]> {
+  const keywords = companyFilter ? `${roleQuery} ${companyFilter}`.trim() : roleQuery;
+  const locLower = requestedLocation.toLowerCase();
+  const isRemoteQuery = locLower === 'remote' || locLower === 'wfh' || locLower === 'work from home';
+  const effectiveLocation = isRemoteQuery ? 'India' : requestedLocation || 'India';
+
+  const tprMap: Record<PostingFreshnessFilter, string> = {
+    '24h': 'r86400',
+    '3d': 'r259200',
+    '7d': 'r604800',
+    '30d': 'r2592000',
+    any: '',
+  };
+  const jtMap: Record<EmploymentTypeFilter, string> = {
+    fulltime: 'F',
+    parttime: 'P',
+    contract: 'C',
+    internship: 'I',
+    any: '',
+  };
+
+  const baseParams = new URLSearchParams({
+    keywords,
+    location: effectiveLocation,
+  });
+  if (tprMap[postingFreshness]) baseParams.set('f_TPR', tprMap[postingFreshness]);
+  if (jtMap[employmentType]) baseParams.set('f_JT', jtMap[employmentType]);
+  if (isRemoteQuery) baseParams.set('f_WT', '2');
+
+  const pageOffsets = [0, 10, 20];
+  const pageResponses = await Promise.allSettled(
+    pageOffsets.map(async (start) => {
+      const p = new URLSearchParams(baseParams);
+      p.set('start', String(start));
+      const { status, text } = await fetchTextWithTimeout(
+        `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?${p.toString()}`,
+        8500,
+        signal,
+        LINKEDIN_HEADERS
+      );
+      if (status !== 200) {
+        throw new Error(`LinkedIn returned HTTP ${status}`);
+      }
+      return text;
+    })
+  );
+
+  let okPages = 0;
+  const records: RawPublicJobRecordWithFreshness[] = [];
+  const seenLiIds = new Set<string>();
+
+  for (const pageRes of pageResponses) {
+    if (pageRes.status !== 'fulfilled') continue;
+    okPages++;
+    const blocks = pageRes.value.split('<li>').slice(1);
+    for (const block of blocks) {
+      const jobId = block.match(/jobPosting:(\d+)/)?.[1];
+      const rawTitle = block.match(/base-search-card__title[^>]*>([\s\S]*?)<\/h3>/)?.[1];
+      const title = htmlToPlainText(rawTitle || '').replace(/\s+/g, ' ').trim();
+      const rawUrl = block.match(/base-card__full-link[^>]*href="([^"]+)"/)?.[1];
+      if (!title || !rawUrl) continue;
+
+      const cleanUrl = rawUrl.split('?')[0].trim();
+      const dedupKey = jobId || cleanUrl;
+      if (seenLiIds.has(dedupKey)) continue;
+      seenLiIds.add(dedupKey);
+
+      const rawCompany =
+        block.match(/base-search-card__subtitle[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/)?.[1] ||
+        block.match(/base-search-card__subtitle[^>]*>([\s\S]*?)<\/h4>/)?.[1] ||
+        '';
+      const company = htmlToPlainText(rawCompany).replace(/\s+/g, ' ').trim() || 'Company not specified';
+
+      const rawLoc = block.match(/job-search-card__location[^>]*>([\s\S]*?)<\/span>/)?.[1] || '';
+      const location = htmlToPlainText(rawLoc).replace(/\s+/g, ' ').trim() || effectiveLocation;
+
+      const timeDateMatch = block.match(/<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)<\/time>/);
+      const isoDate = timeDateMatch?.[1]?.trim() || null;
+      const relativeText = timeDateMatch?.[2]
+        ? htmlToPlainText(timeDateMatch[2]).replace(/\s+/g, ' ').trim()
+        : null;
+
+      records.push({
+        id: `linkedin-${jobId || stableShortHash(cleanUrl)}`,
+        title,
+        company,
+        location,
+        jobUrl: cleanUrl,
+        applyUrl: cleanUrl,
+        source: 'linkedin',
+        datePosted: isoDate,
+        freshnessHint: relativeText || isoDate,
+        employmentType: employmentType !== 'any' ? employmentType : 'Not specified',
+        description: '',
+        salaryMin: null,
+        salaryMax: null,
+        salaryInterval: null,
+        salaryCurrency: null,
+        isRemote: isRemoteQuery || /\bremote\b/i.test(location) ? true : null,
+        loadDetail: jobId
+          ? async (sig?: AbortSignal) => {
+              const now = Date.now();
+              const cached = linkedInDetailCache.get(jobId);
+              if (cached && cached.expiresAt > now) {
+                return cached.detail;
+              }
+              const { status, text } = await fetchTextWithTimeout(
+                `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${encodeURIComponent(jobId)}`,
+                6500,
+                sig,
+                LINKEDIN_HEADERS
+              );
+              if (status === 429) {
+                const err: any = new Error('LinkedIn detail rate limited');
+                err.status = 429;
+                throw err;
+              }
+              if (status !== 200 || !text) return null;
+
+              const descHtml = text.match(/show-more-less-html__markup[^>]*>([\s\S]*?)<\/div>/)?.[1] || '';
+              const description = htmlToPlainText(descHtml);
+              let jobLevel: string | undefined;
+              let empType: string | undefined;
+
+              const criteriaMatches = text.matchAll(
+                /description__job-criteria-subheader[^>]*>([\s\S]*?)<\/h3>[\s\S]*?description__job-criteria-text[^>]*>([\s\S]*?)<\/span>/g
+              );
+              for (const m of criteriaMatches) {
+                const label = htmlToPlainText(m[1]).toLowerCase();
+                const val = htmlToPlainText(m[2]).replace(/\s+/g, ' ').trim();
+                if (label.includes('seniority') && val) jobLevel = val;
+                if (label.includes('employment type') && val) empType = val;
+              }
+
+              const detail = { description, jobLevel, employmentType: empType };
+              if (linkedInDetailCache.size >= 250) {
+                const firstKey = linkedInDetailCache.keys().next().value;
+                if (firstKey) linkedInDetailCache.delete(firstKey);
+              }
+              linkedInDetailCache.set(jobId, { expiresAt: now + 30 * 60 * 1000, detail });
+              return detail;
+            }
+          : undefined,
+      });
+    }
+  }
+
+  if (okPages === 0) {
+    throw new Error('LinkedIn public job search did not respond');
+  }
+  return records;
+}
+
 async function fetchCustomCompanyBoardCandidates(
   companyName: string,
   roleQuery: string,
@@ -1322,6 +1642,9 @@ async function fetchCustomCompanyBoardCandidates(
   const srAlreadyCovered = CURATED_SMARTRECRUITERS_BOARDS.some(
     (b) => b.slug.toLowerCase() === slugBase || b.company.toLowerCase() === companyName.trim().toLowerCase()
   );
+  const leverAlreadyCovered = CURATED_LEVER_BOARDS.some(
+    (b) => b.slug.toLowerCase() === slugBase || b.company.toLowerCase() === companyName.trim().toLowerCase()
+  );
 
   const probes: Promise<RawPublicJobRecord[]>[] = [];
   if (!ghAlreadyCovered) {
@@ -1332,35 +1655,9 @@ async function fetchCustomCompanyBoardCandidates(
       fetchSmartRecruitersBoard(titleCaseSlug, companyName.trim(), roleQuery, undefined, signal).catch(() => [])
     );
   }
-  probes.push(
-    fetchJsonWithTimeout(`https://api.lever.co/v0/postings/${encodeURIComponent(slugBase)}?mode=json`, 6500, signal)
-      .then((rows) => {
-        if (!Array.isArray(rows)) return [];
-        return rows
-          .filter((r: any) => r?.text && r?.hostedUrl)
-          .map((r: any): RawPublicJobRecord => ({
-            id: `lever-${slugBase}-${r.id}`,
-            title: String(r.text).trim(),
-            company: companyName.trim(),
-            location: r.categories?.location ? String(r.categories.location) : 'Location not specified',
-            jobUrl: String(r.hostedUrl),
-            applyUrl: String(r.applyUrl || r.hostedUrl),
-            source: 'lever',
-            datePosted:
-              typeof r.createdAt === 'number' ? new Date(r.createdAt).toISOString() : null,
-            employmentType: r.categories?.commitment ? String(r.categories.commitment) : 'Not specified',
-            description: htmlToPlainText(
-              [r.descriptionPlain || r.description || '', r.additionalPlain || r.additional || ''].join('\n\n')
-            ),
-            salaryMin: null,
-            salaryMax: null,
-            salaryInterval: null,
-            salaryCurrency: null,
-            isRemote: r.workplaceType === 'remote' ? true : null,
-          }));
-      })
-      .catch(() => [])
-  );
+  if (!leverAlreadyCovered) {
+    probes.push(fetchLeverBoard(slugBase, companyName.trim(), signal).catch(() => []));
+  }
 
   const settled = await Promise.all(probes);
   settled.forEach((arr) => results.push(...arr));
@@ -1378,8 +1675,25 @@ export async function searchPublicJobsInBrowser(
   const requestedLocation = (request.location || 'India').trim() || 'India';
   const companyFilter = (request.companyName || '').trim();
   const useIndiaCountry = /\bindia\b/i.test(requestedLocation) || INDIAN_CITIES.some((c) => requestedLocation.toLowerCase().includes(c));
+  const isServerRuntime = typeof window === 'undefined';
 
-  const tasks: { source: string; promise: Promise<RawPublicJobRecord[]> }[] = [
+  const tasks: { source: string; promise: Promise<RawPublicJobRecordWithFreshness[]> }[] = [
+    ...(isServerRuntime
+      ? [
+          {
+            source: 'linkedin',
+            promise: fetchLinkedInGuestJobs(
+              requestedRole,
+              requestedLocation,
+              companyFilter,
+              request.postingFreshness,
+              request.employmentType,
+              signal
+            ),
+          },
+        ]
+      : []),
+    { source: 'himalayas', promise: fetchHimalayasJobs(signal) },
     { source: 'remotive', promise: fetchRemotiveJobs(requestedRole, signal) },
     { source: 'jobicy', promise: fetchJobicyJobs(requestedRole, signal) },
     { source: 'remoteok', promise: fetchRemoteOkJobs(signal) },
@@ -1444,14 +1758,34 @@ export async function searchPublicJobsInBrowser(
         return out;
       })(),
     },
-  ];
-
-  if (companyFilter) {
-    tasks.push({
+    {
       source: 'lever',
-      promise: fetchCustomCompanyBoardCandidates(companyFilter, requestedRole, signal),
-    });
-  }
+      promise: (async () => {
+        const boardsToQuery = companyFilter
+          ? CURATED_LEVER_BOARDS.filter((b) => verifyCompanyMatch(companyFilter, b.company)[1])
+          : CURATED_LEVER_BOARDS;
+
+        const probes = boardsToQuery.map((b) => fetchLeverBoard(b.slug, b.company, signal));
+        const customProbe = companyFilter
+          ? [fetchCustomCompanyBoardCandidates(companyFilter, requestedRole, signal)]
+          : [];
+
+        const settled = await Promise.allSettled([...probes, ...customProbe]);
+        const out: RawPublicJobRecord[] = [];
+        let okCount = 0;
+        for (const res of settled) {
+          if (res.status === 'fulfilled') {
+            okCount++;
+            out.push(...res.value);
+          }
+        }
+        if (boardsToQuery.length + customProbe.length > 0 && okCount === 0) {
+          throw new Error('Lever public feeds did not respond');
+        }
+        return out;
+      })(),
+    },
+  ];
 
   const settledTasks = await Promise.allSettled(tasks.map((t) => t.promise));
   if (signal?.aborted) {
@@ -1462,7 +1796,7 @@ export async function searchPublicJobsInBrowser(
 
   const sourcesSucceeded: string[] = [];
   const sourceErrors: SourceErrorInfo[] = [];
-  const allRawRecords: RawPublicJobRecord[] = [];
+  const allRawRecords: RawPublicJobRecordWithFreshness[] = [];
 
   settledTasks.forEach((result, idx) => {
     const srcName = tasks[idx].source;
@@ -1485,7 +1819,7 @@ export async function searchPublicJobsInBrowser(
   let excludedByExperience = 0;
 
   const preQualified: {
-    record: RawPublicJobRecord;
+    record: RawPublicJobRecordWithFreshness;
     companyStatus: CompanyMatchStatus;
     companyDisplay: string;
   }[] = [];
@@ -1520,7 +1854,8 @@ export async function searchPublicJobsInBrowser(
       continue;
     }
 
-    if (!isWithinFreshnessWindow(row.datePosted, request.postingFreshness, nowUtc)) {
+    const freshnessVal = row.freshnessHint || row.datePosted;
+    if (!isWithinFreshnessWindow(freshnessVal, request.postingFreshness, nowUtc)) {
       excludedByFreshness++;
       continue;
     }
@@ -1532,19 +1867,45 @@ export async function searchPublicJobsInBrowser(
     });
   }
 
-  const needsDetail = preQualified.filter((item) => !item.record.description && item.record.loadDetail).slice(0, 24);
-  if (needsDetail.length > 0) {
-    await Promise.allSettled(
-      needsDetail.map(async (item) => {
-        if (!item.record.loadDetail) return;
-        const det = await item.record.loadDetail(signal);
-        if (det?.description) item.record.description = det.description;
-        if (det?.applyUrl) item.record.applyUrl = det.applyUrl;
-        if (det?.employmentType) item.record.employmentType = det.employmentType;
-        if (det?.jobLevel) item.record.jobLevel = det.jobLevel;
-      })
-    );
-  }
+  const needsDetailAts = preQualified
+    .filter((item) => !item.record.description && item.record.loadDetail && item.record.source !== 'linkedin')
+    .slice(0, 16);
+  const needsDetailLi = preQualified
+    .filter((item) => !item.record.description && item.record.loadDetail && item.record.source === 'linkedin')
+    .slice(0, 12);
+
+  await Promise.allSettled([
+    ...needsDetailAts.map(async (item) => {
+      if (!item.record.loadDetail) return;
+      const det = await item.record.loadDetail(signal);
+      if (det?.description) item.record.description = det.description;
+      if (det?.applyUrl) item.record.applyUrl = det.applyUrl;
+      if (det?.employmentType) item.record.employmentType = det.employmentType;
+      if (det?.jobLevel) item.record.jobLevel = det.jobLevel;
+    }),
+    (async () => {
+      for (let i = 0; i < needsDetailLi.length; i += 2) {
+        if (signal?.aborted) break;
+        const chunk = needsDetailLi.slice(i, i + 2);
+        let hitRateLimit = false;
+        await Promise.allSettled(
+          chunk.map(async (item) => {
+            if (!item.record.loadDetail) return;
+            try {
+              const det = await item.record.loadDetail(signal);
+              if (det?.description) item.record.description = det.description;
+              if (det?.applyUrl) item.record.applyUrl = det.applyUrl;
+              if (det?.employmentType) item.record.employmentType = det.employmentType;
+              if (det?.jobLevel) item.record.jobLevel = det.jobLevel;
+            } catch (err: any) {
+              if (err?.status === 429) hitRateLimit = true;
+            }
+          })
+        );
+        if (hitRateLimit) break;
+      }
+    })(),
+  ]);
 
   const normalizedJobs: NormalizedJobOpening[] = [];
   const seenKeys = new Set<string>();

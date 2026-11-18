@@ -75,8 +75,12 @@ async function runTests() {
   const refNow = new Date('2026-11-17T10:00:00Z');
   assert(
     isWithinFreshnessWindow('2026-11-17T02:00:00Z', '24h', refNow) &&
-      !isWithinFreshnessWindow('2026-11-15T02:00:00Z', '24h', refNow),
-    '24h freshness filter must block older postings'
+      !isWithinFreshnessWindow('2026-11-15T02:00:00Z', '24h', refNow) &&
+      isWithinFreshnessWindow('39 minutes ago', '24h', refNow) &&
+      isWithinFreshnessWindow('19 hours ago', '24h', refNow) &&
+      !isWithinFreshnessWindow('2 days ago', '24h', refNow) &&
+      isWithinFreshnessWindow('2 days ago', '3d', refNow),
+    'Freshness filter must handle ISO dates and relative minutes/hours/days accurately'
   );
 
   assert(

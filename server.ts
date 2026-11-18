@@ -583,11 +583,17 @@ async function startServer() {
       const contentType = upstream.headers.get('content-type') || '';
       if (upstream.ok && contentType.includes('application/json')) {
         const parsed = await upstream.json();
-        if (parsed && Array.isArray(parsed.sourcesSucceeded) && parsed.sourcesSucceeded.length > 0) {
+        if (
+          parsed &&
+          Array.isArray(parsed.sourcesSucceeded) &&
+          parsed.sourcesSucceeded.length > 0 &&
+          Array.isArray(parsed.jobs) &&
+          parsed.jobs.length > 0
+        ) {
           return res.status(200).json(parsed);
         }
       }
-      throw new Error(`Python job service unavailable or all upstream scrapers blocked (HTTP ${upstream.status})`);
+      throw new Error(`Python job service unavailable or returned 0 matches (HTTP ${upstream.status})`);
     } catch {
       try {
         const fallbackResult = await searchPublicJobsInBrowser(validatedPayload);
