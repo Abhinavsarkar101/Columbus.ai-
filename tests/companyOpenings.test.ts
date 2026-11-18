@@ -1,4 +1,10 @@
 import { resolveCompanyOpeningsEndpoint, searchCompanyOpenings, OpeningsApiError } from '../src/lib/companyOpeningsApi';
+import {
+  classifyExperience,
+  isWithinFreshnessWindow,
+  matchesRequestedLocation,
+  matchesTargetRoleTitle,
+} from '../src/lib/clientJobSearch';
 import { filterOpeningsByUnspecified } from '../src/pages/JobSearch';
 import { COMPANIES } from '../src/data/companies';
 import { NormalizedJobOpening } from '../src/types/companyOpenings';
@@ -12,13 +18,13 @@ function assert(condition: boolean, msg: string) {
 async function runTests() {
   console.log('--- RUNNING FRONTEND JOB SEARCH TESTS ---');
 
-  // 1. Endpoint resolution for GitHub Pages vs local dev vs configured VITE_COMPANY_OPENINGS_API_URL
+  // 1. Endpoint resolution for Render full-stack deployment vs local dev vs custom URL
   assert(
-    resolveCompanyOpeningsEndpoint('', 'abhinavsarkar101.github.io') === null,
-    'Static GitHub Pages host without VITE_COMPANY_OPENINGS_API_URL must return null'
+    resolveCompanyOpeningsEndpoint('', 'compass-ai.onrender.com') === '/api/company-interview/openings/search',
+    'Full-stack Render deployment should resolve to Express /api route'
   );
   assert(
-    resolveCompanyOpeningsEndpoint('https://compass-jobs.onrender.com/', 'abhinavsarkar101.github.io') ===
+    resolveCompanyOpeningsEndpoint('https://compass-jobs.onrender.com/', 'compass-ai.onrender.com') ===
       'https://compass-jobs.onrender.com/api/company-interview/openings/search',
     'Configured API URL should resolve cleanly without double slashes'
   );
@@ -28,7 +34,7 @@ async function runTests() {
   );
   console.log('✅ Endpoint resolution passed');
 
-  // 2. Missing config error handling on static deployment (works without companyName!)
+  // 2. Explicit opt-out missing_config guard when fallbackToPublicFeeds is false
   let caughtMissingConfig = false;
   try {
     await searchCompanyOpenings(
@@ -40,15 +46,49 @@ async function runTests() {
         postingFreshness: '24h',
         resultsPerSource: 10,
       },
-      { endpointOverride: null }
+      { endpointOverride: null, fallbackToPublicFeeds: false }
     );
   } catch (err: any) {
     caughtMissingConfig = err instanceof OpeningsApiError && err.code === 'missing_config';
   }
-  assert(caughtMissingConfig, 'Missing endpointOverride should throw OpeningsApiError(missing_config)');
-  console.log('✅ Missing config handling passed');
+  assert(caughtMissingConfig, 'Opting out of public fallback should throw OpeningsApiError(missing_config)');
+  console.log('✅ Explicit missing_config guard passed');
 
-  // 3. Unspecified experience toggle filtering
+  // 3. Strict deterministic filtering parity (Title/Seniority, Location, Freshness, Experience)
+  assert(
+    matchesTargetRoleTitle('Associate Product Manager', 'Associate Product Manager - Growth', 'any', 'fresher') &&
+      matchesTargetRoleTitle('Associate Product Manager', 'APM - Fintech', 'any', 'fresher') &&
+      !matchesTargetRoleTitle('Associate Product Manager', 'Tech Lead', 'any', 'fresher') &&
+      !matchesTargetRoleTitle('Associate Product Manager', 'Senior Product Manager', 'any', 'fresher') &&
+      !matchesTargetRoleTitle('Associate Product Manager', 'Product Manager', 'any', 'fresher') &&
+      !matchesTargetRoleTitle('Business Analyst', 'Tech Lead - Data', 'any', '1_3'),
+    'Generic role & seniority filter must block Tech Lead / Senior / unrequested titles for any role'
+  );
+
+  assert(
+    matchesRequestedLocation('India', 'Bengaluru, India', false) &&
+      !matchesRequestedLocation('Bengaluru', 'US-Remote', true) &&
+      !matchesRequestedLocation('Bengaluru', 'Remote - Singapore', true),
+    'Location filter must exclude US/EU/APAC-locked postings when searching India/Bengaluru'
+  );
+
+  const refNow = new Date('2026-11-17T10:00:00Z');
+  assert(
+    isWithinFreshnessWindow('2026-11-17T02:00:00Z', '24h', refNow) &&
+      !isWithinFreshnessWindow('2026-11-15T02:00:00Z', '24h', refNow),
+    '24h freshness filter must block older postings'
+  );
+
+  assert(
+    classifyExperience('fresher', undefined, undefined, 'Looking for 0-1 years of experience.').matchStatus === 'good_match' &&
+      classifyExperience('fresher', undefined, undefined, '5 years of product management experience required.').matchStatus === 'outside_range' &&
+      classifyExperience('fresher', undefined, undefined, 'Minimum of 3 years building B2B SaaS products.').matchStatus === 'outside_range' &&
+      classifyExperience('1_3', undefined, undefined, 'Extensive experience in enterprise sales.').matchStatus === 'needs_review',
+    'Experience classifier must reject higher multi-word and minimum-of experience statements cleanly'
+  );
+  console.log('✅ Strict title/seniority, location, freshness, and experience rules passed');
+
+  // 4. Unspecified experience toggle filtering
   const sampleJobs: NormalizedJobOpening[] = [
     {
       id: '1',
@@ -58,7 +98,7 @@ async function runTests() {
       location: 'Bengaluru',
       jobUrl: 'https://example.com/1',
       applyUrl: 'https://example.com/1',
-      source: 'indeed',
+      source: 'smartrecruiters',
       datePosted: '2026-11-16',
       employmentType: 'fulltime',
       experienceRange: '1–3 years',
@@ -84,7 +124,7 @@ async function runTests() {
       location: 'India',
       jobUrl: 'https://example.com/2',
       applyUrl: 'https://example.com/2',
-      source: 'linkedin',
+      source: 'greenhouse',
       datePosted: '2026-11-16',
       employmentType: 'fulltime',
       experienceRange: 'Not specified',
@@ -114,7 +154,7 @@ async function runTests() {
   );
   console.log('✅ Experience filter toggle passed');
 
-  // 4. Existing COMPANIES data integrity preserved
+  // 5. Existing COMPANIES data integrity preserved
   assert(COMPANIES.length >= 12, 'All existing companies preserved');
   assert(
     COMPANIES.every((c) => c.name && c.typicalRounds.length > 0 && c.insiderTips.length > 0 && c.commonPitfalls.length > 0),

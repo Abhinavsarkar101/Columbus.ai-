@@ -5,6 +5,8 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
+import { searchPublicJobsInBrowser } from './src/lib/clientJobSearch.ts';
+import type { CompanyOpeningsSearchRequest } from './src/types/companyOpenings.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -534,28 +536,68 @@ async function startServer() {
     }
   });
 
-  // 2b. Local-dev proxy to Python FastAPI JobSpy service (company-jobs-service)
+  app.get('/api/health', (_, res) => {
+    res.json({ status: 'ok', service: 'compass-ai' });
+  });
+
+  // 2b. Proxy to Python FastAPI JobSpy service (when running) with strict deterministic public ATS & job board engine fallback
   app.post('/api/company-interview/openings/search', async (req, res) => {
-    const serviceBase = (process.env.COMPANY_OPENINGS_SERVICE_URL || 'http://127.0.0.1:8001').replace(/\/+$/, '');
+    const body = req.body || {};
+    const role = String(body.role || '').trim();
+    if (role.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a target job role (at least 2 characters).',
+      });
+    }
+
+    const validExp = ['internship', 'fresher', '1_3', '3_5', '5_8', '8_plus', 'any'];
+    const validEmp = ['fulltime', 'internship', 'parttime', 'contract', 'any'];
+    const validFresh = ['24h', '3d', '7d', '30d', 'any'];
+
+    const validatedPayload: CompanyOpeningsSearchRequest = {
+      role,
+      location: String(body.location || 'India').trim() || 'India',
+      ...(body.companyName ? { companyName: String(body.companyName).trim() } : {}),
+      candidateExperience: validExp.includes(body.candidateExperience) ? body.candidateExperience : 'any',
+      employmentType: validEmp.includes(body.employmentType) ? body.employmentType : 'any',
+      postingFreshness: validFresh.includes(body.postingFreshness) ? body.postingFreshness : '7d',
+      resultsPerSource: Math.min(15, Math.max(1, Number(body.resultsPerSource) || 10)),
+    };
+
+    const rawServiceUrl = (process.env.COMPANY_OPENINGS_SERVICE_URL || 'http://127.0.0.1:8001')
+      .trim()
+      .replace(/\/+$/, '');
+    const serviceBase = /^https?:\/\//i.test(rawServiceUrl) ? rawServiceUrl : `http://${rawServiceUrl}`;
+    const isLocalLoopback = serviceBase.includes('127.0.0.1') || serviceBase.includes('localhost');
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 65000);
+    const timeoutId = setTimeout(() => controller.abort(), isLocalLoopback ? 3000 : 60000);
     try {
       const upstream = await fetch(`${serviceBase}/api/company-interview/openings/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body || {}),
+        body: JSON.stringify(validatedPayload),
         signal: controller.signal,
       });
-      const text = await upstream.text();
-      res.status(upstream.status).type('application/json').send(text);
-    } catch (err: any) {
-      const isTimeout = err?.name === 'AbortError';
-      res.status(isTimeout ? 504 : 503).json({
-        success: false,
-        error: isTimeout
-          ? 'The local Python job search service timed out.'
-          : 'Live job search Python service is not running locally. Start company-jobs-service on port 8001 or set VITE_COMPANY_OPENINGS_API_URL.',
-      });
+      const contentType = upstream.headers.get('content-type') || '';
+      if (upstream.ok && contentType.includes('application/json')) {
+        const parsed = await upstream.json();
+        if (parsed && Array.isArray(parsed.sourcesSucceeded) && parsed.sourcesSucceeded.length > 0) {
+          return res.status(200).json(parsed);
+        }
+      }
+      throw new Error(`Python job service unavailable or all upstream scrapers blocked (HTTP ${upstream.status})`);
+    } catch {
+      try {
+        const fallbackResult = await searchPublicJobsInBrowser(validatedPayload);
+        return res.status(200).json(fallbackResult);
+      } catch (fallbackErr: any) {
+        return res.status(503).json({
+          success: false,
+          error: fallbackErr?.message || 'Live job search service is currently unavailable. Please try again shortly.',
+        });
+      }
     } finally {
       clearTimeout(timeoutId);
     }

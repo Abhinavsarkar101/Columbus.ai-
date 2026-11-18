@@ -19,7 +19,7 @@
 > We have shipped a dedicated **Job Search** module (`#jobs`) positioned right after **Resume Studio**, engineered to eliminate irrelevant listings and stale reposts from your placement workflow.
 
 ### What's New in This Release
-- **Dedicated Live Job Search Module (`#jobs`)**: Queries **Indeed India**, **Naukri**, and **public LinkedIn** in real time starting directly with **Target Job Role**, **Location** (defaulting to `India`), and an **Optional Company** filter.
+- **Dedicated Live Job Search Module (`#jobs`)**: Queries direct corporate ATS feeds (Greenhouse & SmartRecruiters across top India/global employers) and public job boards out-of-the-box on GitHub Pages—plus **Indeed India**, **Naukri**, and **public LinkedIn** when backed by the Python service—starting directly with **Target Job Role**, **Location** (defaulting to `India`), and an **Optional Company** filter.
 - **Generic Strict Title & Seniority Filtering**: Works across any target role you enter (e.g., *Associate Product Manager*, *Financial Analyst*, *Management Trainee*)—verifying core role keywords and automatically blocking unrequested higher-seniority titles (such as `Tech Lead`, `Lead`, `Senior`, `Principal`, `Staff`, `Director`, or `VP`).
 - **Strict Experience Band Matching**: When you select an experience level (e.g., `Fresher / 0–1 years` or `1–3 years`), higher-experience and borderline mismatches are excluded automatically so only strict **Good Experience Matches** appear (with an optional toggle for unspecified postings).
 - **Strict Posting Freshness Cutoffs & Empty-State Clarity**: Verifies listing posted dates on the backend against your selected **Posting Freshness** window (`Last 24 hours`, `Last 3 days`, `Last 7 days`, `Last 30 days`) and reports clearly whenever no latest posts exist for that role and timeframe.
@@ -57,7 +57,7 @@ MBA recruiting differs fundamentally from standard undergraduate or lateral job 
 * **Instant Customization & PDF Export**: Executive single-column layout themes (`Classic`, `Modern`, `Minimal`), font scaling, and clean one-page PDF generation.
 
 ### 4. 🔍 Precision Live Job Search *(New)*
-* **Role-First Multi-Board Discovery**: Searches Indeed India, Naukri, and public LinkedIn simultaneously with optional company scoping.
+* **Role-First Multi-Board Discovery**: Queries live CORS-enabled company ATS & public job feeds zero-config on GitHub Pages, or **Indeed India**, **Naukri**, and **public LinkedIn** when the Python service is attached, with optional company scoping.
 * **Deterministic Three-Gate Filtering**: Applies generic role-keyword & seniority guards, strict candidate experience verification, and backend `datePosted` freshness cutoffs (`24h`, `3d`, `7d`, `30d`, `any`).
 * **Transparent Filter Diagnostics**: Summarizes exact exclusion counts by reason and explicitly informs candidates when no latest posts exist within a tight duration window.
 
@@ -136,7 +136,7 @@ MBA recruiting differs fundamentally from standard undergraduate or lateral job 
 ### GitHub Pages & Render Deployment
 - **Static Frontend (`.github/workflows/deploy.yml`)**: Automatically builds and deploys `./dist` to GitHub Pages on pushes to `main`.
   - Add `VITE_FIREBASE_*` repository secrets/variables to enable Firebase Cloud Sync & Google Sign-In on GitHub Pages.
-  - Deploy `company-jobs-service/` to **Render Free** (using `company-jobs-service/render.yaml`) and set `VITE_COMPANY_OPENINGS_API_URL` in GitHub Actions secrets/variables to enable live job search on the GitHub Pages URL.
+  - **Live Job Search**: Works out-of-the-box on GitHub Pages with zero backend secrets via direct CORS-enabled company ATS & public job feeds. Optionally deploy `company-jobs-service/` to **Render Free** (using `company-jobs-service/render.yaml`) and set `VITE_COMPANY_OPENINGS_API_URL` in GitHub Actions secrets/variables to add Indeed India, Naukri, and LinkedIn scraping.
 
 ---
 

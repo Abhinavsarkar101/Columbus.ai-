@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: compass-company-jobs-service
+    runtime: python
+    plan: free
+    rootDir: company-jobs-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: PER_SOURCE_TIMEOUT_SECONDS
+        value: "22"
+      - key: SEARCH_CACHE_TTL_SECONDS
+        value: "120"
+
+  - type: web
+    name: compass-ai
+    runtime: node
+    plan: free
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: COMPANY_OPENINGS_SERVICE_URL
+        fromService:
+          type: web
+          name: compass-company-jobs-service
+          property: hostport

@@ -23,7 +23,11 @@ import {
   NormalizedJobOpening,
   PostingFreshnessFilter,
 } from '../types/companyOpenings';
-import { OpeningsApiError, searchCompanyOpenings } from '../lib/companyOpeningsApi';
+import {
+  OpeningsApiError,
+  resolveCompanyOpeningsEndpoint,
+  searchCompanyOpenings,
+} from '../lib/companyOpeningsApi';
 
 interface JobSearchProps {
   onNavigateTab: (tab: string) => void;
@@ -95,6 +99,20 @@ function formatSourceLabel(source: string): string {
       return 'Naukri';
     case 'linkedin':
       return 'LinkedIn';
+    case 'greenhouse':
+      return 'Greenhouse ATS';
+    case 'smartrecruiters':
+      return 'SmartRecruiters';
+    case 'lever':
+      return 'Lever ATS';
+    case 'remotive':
+      return 'Remotive';
+    case 'jobicy':
+      return 'Jobicy';
+    case 'remoteok':
+      return 'RemoteOK';
+    case 'arbeitnow':
+      return 'Arbeitnow';
     default:
       return source;
   }
@@ -252,7 +270,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({ onNavigateTab }) => {
               <span>Job Search</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Search live openings from Indeed India, Naukri, and public LinkedIn filtered strictly by your target role, seniority, experience band, and posting freshness.
+              Search live openings across Indeed India, Naukri, LinkedIn, and direct company ATS &amp; job boards, filtered strictly by target role, seniority, experience band, and posting freshness.
             </p>
           </div>
 

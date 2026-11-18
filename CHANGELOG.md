@@ -11,7 +11,7 @@ All notable product releases and platform improvements for **Compass — MBA Car
 #### 1. Dedicated **Job Search** Module (`#jobs`)
 - **Promoted Standalone Experience**: Added a dedicated **Job Search** tab immediately after **Resume Studio** across both desktop and mobile navigation, while keeping **Company Interview Prep** cleanly focused on corporate dossiers and interview preparation.
 - **Role-First Discovery Workflow**: Removed company-scope radio toggles so searches start directly with **Target Job Role**, **Location** (defaulting to `India`), and an optional **Company** filter, alongside **Candidate Experience**, **Employment Type**, **Posting Freshness**, and an unspecified-experience toggle.
-- **Live Multi-Source Aggregation**: Queries **Indeed India**, **Naukri**, and **public LinkedIn** concurrently via the FastAPI + `python-jobspy` microservice (`company-jobs-service/`) with Render Free deployment support.
+- **Zero-Config Multi-Source Aggregation**: Runs out-of-the-box on static hosts like GitHub Pages via direct CORS-enabled corporate ATS feeds (Greenhouse, SmartRecruiters, Lever) and open job boards (Remotive, Jobicy, RemoteOK, Arbeitnow), and seamlessly pairs with **Indeed India**, **Naukri**, and **public LinkedIn** via the FastAPI + `python-jobspy` microservice (`company-jobs-service/`) when connected.
 
 #### 2. Strict Role, Seniority, Experience & Freshness Filtering
 - **Generic Title & Seniority Matching**: Dynamically matches any user-entered Target Job Role by core domain keywords and standard abbreviations while rejecting unrequested higher-seniority titles (`Tech Lead`, `Lead`, `Senior`, `Sr.`, `Principal`, `Staff`, `Director`, `VP`, `Head`, `Group`) and unrequested intern/manager levels.

@@ -32,7 +32,7 @@ FRESHER_PATTERNS = [
 ]
 
 RANGE_PATTERN = re.compile(
-    r"(?<!\d)(\d{1,2}(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d{1,2}(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b",
+    r"(?<!\d)(?:between\s+)?(\d{1,2}(?:\.\d+)?)\s*(?:-|–|—|to|and)\s*(\d{1,2}(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b",
     re.IGNORECASE,
 )
 
@@ -43,12 +43,12 @@ METADATA_RANGE_PATTERN = re.compile(
 )
 
 PLUS_PATTERN = re.compile(
-    r"(?:(?:minimum|min\.?|at\s+least)\s+)?(\d{1,2}(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)\b",
+    r"(?:(?:minimum|min\.?|at\s+least)\s+(?:of\s+)?)?(\d{1,2}(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)\b",
     re.IGNORECASE,
 )
 
 MIN_PATTERN = re.compile(
-    r"\b(?:minimum|min\.?|at\s+least)\s+(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\b",
+    r"\b(?:minimum|min\.?|at\s+least)\s+(?:of\s+)?(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\b",
     re.IGNORECASE,
 )
 
@@ -58,14 +58,20 @@ UP_TO_PATTERN = re.compile(
 )
 
 SINGLE_EXPERIENCE_PATTERN = re.compile(
-    r"(?<!\d)(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+|work\s+|professional\s+|industry\s+)?experience\b",
+    r"(?<!\d)(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\s+(?:of\s+)?(?:[a-z/&-]+\s+){0,4}?experience\b",
+    re.IGNORECASE,
+)
+
+VERB_EXPERIENCE_PATTERN = re.compile(
+    r"\b(?:requires?|requiring|with|having|needs?)\s+(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?)\b",
     re.IGNORECASE,
 )
 
 VAGUE_EXPERIENCE_PATTERNS = [
     re.compile(r"\brelevant\s+experience\s+(?:required|preferred|is\s+a\s+plus)\b", re.IGNORECASE),
-    re.compile(r"\bprior\s+(?:relevant\s+)?experience\s+(?:required|preferred)\b", re.IGNORECASE),
-    re.compile(r"\bproven\s+(?:work\s+)?experience\b", re.IGNORECASE),
+    re.compile(r"\bprior\s+(?:[a-z]+\s+){0,2}?experience\s+(?:in|with|is|required|preferred)\b", re.IGNORECASE),
+    re.compile(r"\bproven\s+(?:[a-z]+\s+){0,2}?experience\b", re.IGNORECASE),
+    re.compile(r"\bextensive\s+experience\b", re.IGNORECASE),
 ]
 
 
@@ -120,6 +126,12 @@ def _extract_numeric_ranges(text: str, is_metadata: bool = False) -> list[tuple[
 
     if not found:
         for m in SINGLE_EXPERIENCE_PATTERN.finditer(text):
+            val = float(m.group(1))
+            if 0 <= val <= 35:
+                found.append((val, val, f"{m.group(1)} years"))
+
+    if not found:
+        for m in VERB_EXPERIENCE_PATTERN.finditer(text):
             val = float(m.group(1))
             if 0 <= val <= 35:
                 found.append((val, val, f"{m.group(1)} years"))
